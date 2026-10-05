@@ -4,6 +4,14 @@ import { z } from "zod";
 dotenv.config();
 
 const envSchema = z.object({
+  PORT: z
+    .string()
+    .default("3333")
+    .transform((val) => parseInt(val, 10)),
+  HOST: z.string().default("0.0.0.0"),
+  MCP_TRANSPORT: z
+    .enum(["stdio", "sse", "both"])
+    .default("both"),
   API_BASE_URL: z.string().url().default("http://10.200.1.13:5100"),
   API_FALLBACK_URL: z.string().url().default("https://10.200.1.13:5443"),
   API_REJECT_UNAUTHORIZED: z

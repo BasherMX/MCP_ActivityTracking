@@ -99,7 +99,7 @@ Cada usuario agregará la siguiente entrada a su configuración de MCP en VS Cod
 ---
 
 ## 📋 5. Check List de Validación de Entrega
-- [ ] Servidor MCP respondiendo respuestas JSON-RPC tanto por `stdio` como por `SSE` en el puerto `3333`.
-- [ ] Búsqueda y resolución de responsables activa para múltiples usuarios simultáneos sin colisiones de token JWT.
-- [ ] Imagen de Podman optimizada (< 150 MB) y corriendo de forma transparente en el servidor institucional.
-- [ ] Documentación de configuración publicada para el equipo.
+- [x] Servidor MCP respondiendo respuestas JSON-RPC tanto por `stdio` como por `SSE` en el puerto `3333`.
+- [x] Búsqueda y resolución de responsables activa para múltiples usuarios simultáneos sin colisiones de token JWT.
+- [x] Imagen de Podman optimizada y corriendo de forma transparente en el servidor institucional.
+- [x] Documentación de configuración publicada para el equipo.

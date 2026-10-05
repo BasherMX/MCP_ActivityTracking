@@ -2,122 +2,265 @@ import { apiClient } from './api-client.js';
 import { env } from '../config/env.js';
 import { logger } from '../utils/logger.js';
 import { ResponsibleDto, AuthenticateDto } from '../types/openapi.js';
+import { getCurrentSession } from './session-context.js';
+
+interface CachedAuth {
+  token: string;
+  tokenExpiresAt: number;
+  responsibleInfo: ResponsibleDto;
+}
 
 class AuthManager {
-  private token: string | null = null;
-  private tokenExpiresAt: number | null = null;
-  private responsibleInfo: ResponsibleDto | null = null;
-  private isAuthenticating: Promise<string | null> | null = null;
+  // Caché global en memoria de tokens válidos indexados por username (minúsculas)
+  private userAuthCache = new Map<string, CachedAuth>();
+
+  // Promesas de autenticación activas para evitar peticiones duplicadas simultáneas por usuario
+  private pendingAuth = new Map<string, Promise<string | null>>();
+
+  // Fallback para ejecución standalone (Stdio / scripts)
+  private defaultToken: string | null = null;
+  private defaultTokenExpiresAt: number | null = null;
+  private defaultResponsibleInfo: ResponsibleDto | null = null;
 
   /**
-   * Obtiene un token JWT válido. Si no existe o está próximo a expirar, ejecuta login.
+   * Obtiene un token JWT válido para el contexto de usuario actual.
+   * Si no existe o está por expirar, ejecuta login automático.
    */
   public async getValidToken(): Promise<string | null> {
+    const session = getCurrentSession();
     const now = Date.now();
-    // Si tenemos token y aún le quedan al menos 3 minutos de vida
-    if (this.token && this.tokenExpiresAt && this.tokenExpiresAt - now > 3 * 60 * 1000) {
-      return this.token;
-    }
+    const minLifeMs = 3 * 60 * 1000; // Al menos 3 minutos de vigencia
 
-    if (this.isAuthenticating) {
-      return this.isAuthenticating;
-    }
-
-    this.isAuthenticating = this.authenticate();
-    try {
-      return await this.isAuthenticating;
-    } finally {
-      this.isAuthenticating = null;
-    }
-  }
-
-  /**
-   * Ejecuta la autenticación contra /api/v1/Responsibles/authenticate
-   */
-  public async authenticate(): Promise<string | null> {
-    try {
-      logger.info(`Autenticando usuario '${env.AUTH_USERNAME}' en ${env.API_BASE_URL}...`);
-      const body: AuthenticateDto = {
-        username: env.AUTH_USERNAME,
-        password: env.AUTH_PASSWORD,
-      };
-
-      const response = await apiClient.post<ResponsibleDto>('/api/v1/Responsibles/authenticate', body);
-
-      if (response.data && response.data.token) {
-        this.token = response.data.token;
-        this.responsibleInfo = response.data;
-        // Asignamos validez por defecto de 8 horas si no decodificamos el JWT
-        this.tokenExpiresAt = Date.now() + 8 * 60 * 60 * 1000;
-
-        // Intentar leer expiración del JWT (exp claim)
-        try {
-          const parts = this.token.split('.');
-          if (parts.length === 3) {
-            const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf8'));
-            if (payload.exp) {
-              this.tokenExpiresAt = payload.exp * 1000;
-            }
-          }
-        } catch {
-          // Ignorar fallo de decodificación y usar expiración estimada
-        }
-
-        // Configurar el header global de autenticación por defecto
-        apiClient.defaults.headers.common['Authorization'] = `Bearer ${this.token}`;
-        logger.info(`Autenticación exitosa para '${response.data.fullName || env.AUTH_USERNAME}'. Token almacenado en memoria.`);
-        return this.token;
+    // 1. Contexto de sesión multi-usuario activo
+    if (session && (session.username || session.token)) {
+      if (session.token && session.tokenExpiresAt && session.tokenExpiresAt - now > minLifeMs) {
+        return session.token;
       }
 
-      logger.warn('La respuesta de autenticación no incluyó token JWT.');
+      const targetUsername = session.username || env.AUTH_USERNAME;
+      const targetKey = targetUsername.toLowerCase();
+
+      // Verificar si tenemos un token en caché para este usuario
+      const cached = this.userAuthCache.get(targetKey);
+      if (cached && cached.tokenExpiresAt - now > minLifeMs) {
+        session.token = cached.token;
+        session.tokenExpiresAt = cached.tokenExpiresAt;
+        session.responsibleInfo = cached.responsibleInfo;
+        return session.token;
+      }
+
+      // Si no hay token en caché, autenticar con las credenciales de la sesión
+      const password = session.password || (targetUsername === env.AUTH_USERNAME ? env.AUTH_PASSWORD : '');
+      const token = await this.authenticate(targetUsername, password);
+      if (token) {
+        session.token = token;
+        const fresh = this.userAuthCache.get(targetKey);
+        if (fresh) {
+          session.responsibleInfo = fresh.responsibleInfo;
+          session.tokenExpiresAt = fresh.tokenExpiresAt;
+        }
+      }
+      return token;
+    }
+
+    // 2. Modo fallback (Stdio / Scripts directos usando .env)
+    if (this.defaultToken && this.defaultTokenExpiresAt && this.defaultTokenExpiresAt - now > minLifeMs) {
+      return this.defaultToken;
+    }
+
+    const defaultKey = env.AUTH_USERNAME.toLowerCase();
+    const cachedDefault = this.userAuthCache.get(defaultKey);
+    if (cachedDefault && cachedDefault.tokenExpiresAt - now > minLifeMs) {
+      this.defaultToken = cachedDefault.token;
+      this.defaultTokenExpiresAt = cachedDefault.tokenExpiresAt;
+      this.defaultResponsibleInfo = cachedDefault.responsibleInfo;
+      return this.defaultToken;
+    }
+
+    return await this.authenticate(env.AUTH_USERNAME, env.AUTH_PASSWORD);
+  }
+
+  /**
+   * Ejecuta autenticación contra /api/v1/Responsibles/authenticate
+   */
+  public async authenticate(customUsername?: string, customPassword?: string): Promise<string | null> {
+    const session = getCurrentSession();
+    const username = (customUsername || session?.username || env.AUTH_USERNAME).trim();
+    const password = customPassword !== undefined ? customPassword : (session?.password || env.AUTH_PASSWORD);
+
+    if (!username) {
+      logger.error('No se ha proporcionado nombre de usuario para autenticación.');
       return null;
-    } catch (error: any) {
-      logger.error('Error al autenticar contra la API:', error?.response?.data || error?.message || error);
-      return null;
+    }
+
+    const authKey = username.toLowerCase();
+
+    // Evitar peticiones concurrentes duplicadas para el mismo usuario
+    const pending = this.pendingAuth.get(authKey);
+    if (pending) {
+      return pending;
+    }
+
+    const authPromise = (async () => {
+      try {
+        logger.info(`Autenticando usuario '${username}' en ${env.API_BASE_URL}...`);
+        const body: AuthenticateDto = {
+          username,
+          password,
+        };
+
+        const response = await apiClient.post<ResponsibleDto>('/api/v1/Responsibles/authenticate', body, {
+          // La petición de login nunca debe llevar header de autorización previo
+          headers: {
+            Authorization: '',
+          },
+        });
+
+        if (response.data && response.data.token) {
+          const token = response.data.token;
+          let expiresAt = Date.now() + 8 * 60 * 60 * 1000; // 8 horas por defecto
+
+          try {
+            const parts = token.split('.');
+            if (parts.length === 3) {
+              const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf8'));
+              if (payload.exp) {
+                expiresAt = payload.exp * 1000;
+              }
+            }
+          } catch {
+            // Ignorar fallo de decodificación y usar expiración estimada
+          }
+
+          const authData: CachedAuth = {
+            token,
+            tokenExpiresAt: expiresAt,
+            responsibleInfo: response.data,
+          };
+
+          this.userAuthCache.set(authKey, authData);
+
+          // Si estamos en una sesión activa, asignarle sus datos
+          if (session && session.username.toLowerCase() === authKey) {
+            session.token = token;
+            session.tokenExpiresAt = expiresAt;
+            session.responsibleInfo = response.data;
+          }
+
+          // Si es el usuario por defecto o stdio
+          if (username.toLowerCase() === env.AUTH_USERNAME.toLowerCase()) {
+            this.defaultToken = token;
+            this.defaultTokenExpiresAt = expiresAt;
+            this.defaultResponsibleInfo = response.data;
+          }
+
+          logger.info(`Autenticación exitosa para '${response.data.fullName || username}'. Token JWT aislado en memoria.`);
+          return token;
+        }
+
+        logger.warn(`La respuesta de autenticación para '${username}' no incluyó token JWT.`);
+        return null;
+      } catch (error: any) {
+        logger.error(`Error al autenticar usuario '${username}' contra la API:`, error?.response?.data || error?.message || error);
+        return null;
+      } finally {
+        this.pendingAuth.delete(authKey);
+      }
+    })();
+
+    this.pendingAuth.set(authKey, authPromise);
+    return authPromise;
+  }
+
+  /**
+   * Invalida el token en memoria tras error 401
+   */
+  public invalidateToken(): void {
+    const session = getCurrentSession();
+    if (session) {
+      logger.warn(`Invalidando token en memoria para sesión ${session.sessionId} (usuario '${session.username}') tras error 401.`);
+      if (session.username) {
+        this.userAuthCache.delete(session.username.toLowerCase());
+      }
+      session.token = undefined;
+      session.tokenExpiresAt = undefined;
+      session.responsibleInfo = undefined;
+    } else {
+      logger.warn('Invalidando token por defecto en memoria tras error 401.');
+      this.userAuthCache.delete(env.AUTH_USERNAME.toLowerCase());
+      this.defaultToken = null;
+      this.defaultTokenExpiresAt = null;
+      this.defaultResponsibleInfo = null;
     }
   }
 
   /**
-   * Invalida el token en memoria (usado cuando la API devuelve 401)
+   * Retorna el token actual para el contexto en ejecución (usado por el interceptor HTTP).
    */
-  public invalidateToken(): void {
-    logger.warn('Invalidando token en memoria tras error 401.');
-    this.token = null;
-    this.tokenExpiresAt = null;
-    this.responsibleInfo = null;
-    delete apiClient.defaults.headers.common['Authorization'];
-  }
-
-  public getCachedResponsible(): ResponsibleDto | null {
-    return this.responsibleInfo;
+  public getCurrentToken(): string | null {
+    const session = getCurrentSession();
+    if (session?.token) {
+      return session.token;
+    }
+    if (session?.username) {
+      const cached = this.userAuthCache.get(session.username.toLowerCase());
+      if (cached && cached.tokenExpiresAt > Date.now()) {
+        return cached.token;
+      }
+    }
+    return this.defaultToken;
   }
 
   /**
-   * Obtiene dinámicamente el ID del responsable autenticado (o fallback configurado).
+   * Retorna la información de responsable en caché para el contexto activo.
+   */
+  public getCachedResponsible(): ResponsibleDto | null {
+    const session = getCurrentSession();
+    if (session?.responsibleInfo) {
+      return session.responsibleInfo;
+    }
+    if (session?.username) {
+      const cached = this.userAuthCache.get(session.username.toLowerCase());
+      if (cached?.responsibleInfo) {
+        return cached.responsibleInfo;
+      }
+    }
+    return this.defaultResponsibleInfo;
+  }
+
+  /**
+   * Obtiene dinámicamente el ID del responsable del usuario en contexto.
    */
   public getResponsibleId(): number {
-    if (this.responsibleInfo && typeof this.responsibleInfo.id === 'number' && this.responsibleInfo.id > 0) {
-      return this.responsibleInfo.id;
+    const info = this.getCachedResponsible();
+    if (info && typeof info.id === 'number' && info.id > 0) {
+      return info.id;
     }
     return env.DEFAULT_RESPONSIBLE_ID || 6;
   }
 
   /**
-   * Obtiene dinámicamente el nombre completo del responsable autenticado.
+   * Obtiene dinámicamente el nombre completo del responsable en contexto.
    */
   public getResponsibleName(): string {
-    if (this.responsibleInfo && this.responsibleInfo.fullName) {
-      return this.responsibleInfo.fullName;
+    const info = this.getCachedResponsible();
+    if (info && info.fullName) {
+      return info.fullName;
+    }
+    const session = getCurrentSession();
+    if (session && session.username) {
+      return session.username;
     }
     return env.DEFAULT_RESPONSIBLE_NAME || env.AUTH_USERNAME;
   }
 
   /**
-   * Obtiene dinámicamente el ID del servicio asignado al responsable (o fallback configurado).
+   * Obtiene dinámicamente el ID del servicio asignado al usuario en contexto.
    */
   public getDefaultServiceId(): number {
-    if (this.responsibleInfo && this.responsibleInfo.services && this.responsibleInfo.services.length > 0) {
-      const primaryService = this.responsibleInfo.services[0];
+    const info = this.getCachedResponsible();
+    if (info && info.services && info.services.length > 0) {
+      const primaryService = info.services[0];
       const sId = (primaryService as any)?.id || primaryService?.serviceId;
       if (typeof sId === 'number' && sId > 0) {
         return sId;
@@ -128,4 +271,3 @@ class AuthManager {
 }
 
 export const authManager = new AuthManager();
-

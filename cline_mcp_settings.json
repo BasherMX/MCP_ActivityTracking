@@ -1,18 +1,11 @@
 {
   "mcpServers": {
     "activity-tracking": {
-      "command": "node",
-      "args": [
-        "C:\\Users\\Ulises\\Downloads\\utils vs code\\ActivityTracking\\MCP_ActivityTracking\\dist\\index.js"
-      ],
-      "env": {
-        "API_BASE_URL": "http://10.200.1.13:5100",
-        "DRY_RUN_MODE": "true",
-        "AUTH_USERNAME": "brayan.vazquez",
-        "AUTH_PASSWORD": "TU_PASSWORD_AQUI",
-        "DEFAULT_RESPONSIBLE_ID": "6",
-        "DEFAULT_PROJECT_ID": "11",
-        "DEFAULT_SERVICE_ID": "5"
+      "type": "sse",
+      "url": "http://10.185.1.2:3333/sse",
+      "headers": {
+        "X-Auth-Username": "tu.usuario",
+        "X-Auth-Password": "TuPasswordAqui"
       },
       "disabled": false,
       "autoApprove": [

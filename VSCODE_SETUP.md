@@ -1,99 +1,118 @@
 # Guía de Conexión e Integración con VS Code: Servidor MCP Activity Tracking
 
-Esta guía explica paso a paso cómo conectar este servidor MCP a tu entorno de desarrollo en VS Code (Cline, Roo Code, GitHub Copilot o Claude Desktop).
+Esta guía explica paso a paso cómo conectar este servidor MCP a tu entorno de desarrollo en VS Code (Cline, Roo Code o GitHub Copilot) utilizando la arquitectura **Centralizada en Podman (SSE Multi-Usuario)** o mediante ejecución local por **Stdio**.
 
 ---
 
-## 1. Requisitos Previos
+## 🚀 Método Recomendado: Conexión al Servidor Central Podman (SSE)
 
-1. **Compilación del Servidor:**
-   Asegúrate de que la carpeta `dist/` esté generada ejecutando:
-   ```bash
-   cd "C:\Users\Ulises\Downloads\utils vs code\ActivityTracking\MCP_ActivityTracking"
-   npm run build
-   ```
-2. **Ubicación del Ejecutable:**
-   El archivo principal compilado es:
-   `C:\Users\Ulises\Downloads\utils vs code\ActivityTracking\MCP_ActivityTracking\dist\index.js`
-3. **Credenciales en `.env`:**
-   Edita el archivo `.env` en esa misma carpeta y coloca tu contraseña real en `AUTH_PASSWORD`.
+Con este método **NO necesitas instalar Node.js, compilar código, clonar repositorios ni configurar archivos `.env` locales**. El servidor central atiende peticiones en tiempo real aislando las credenciales y sesiones de cada desarrollador.
 
----
+### 1. Configuración en Cline (`cline_mcp_settings.json`)
 
-## 2. Conexión con Cline (Extensión de VS Code)
-
-1. En VS Code, abre la pestaña de **Cline**.
-2. Haz clic en el ícono de engranaje (**Settings**) o ícono de **MCP Servers**.
-3. Haz clic en **"Edit MCP Settings"** (abrirá `cline_mcp_settings.json`).
-4. Agrega o combina la siguiente configuración:
+1. En VS Code, abre el panel de **Cline**.
+2. Haz clic en el ícono de engranaje (**Settings**) $\rightarrow$ **MCP Servers**.
+3. Haz clic en **Edit MCP Settings**.
+4. Agrega o sustituye la configuración:
 
 ```json
 {
   "mcpServers": {
     "activity-tracking": {
-      "command": "node",
-      "args": [
-        "C:\\Ruta\\A\\Tu\\MCP_ActivityTracking\\dist\\index.js"
-      ],
-      "env": {
-        "API_BASE_URL": "http://10.200.1.13:5100",
-        "AUTH_USERNAME": "usuario.companero",
-        "AUTH_PASSWORD": "TU_PASSWORD_AQUI",
-        "DRY_RUN_MODE": "true"
-      }
+      "type": "sse",
+      "url": "http://10.185.1.2:3333/sse",
+      "headers": {
+        "X-Auth-Username": "tu.usuario",
+        "X-Auth-Password": "TuPasswordInstitucional"
+      },
+      "disabled": false,
+      "autoApprove": [
+        "track_get_sprint_work_items",
+        "track_get_my_activities",
+        "track_get_activity_detail",
+        "track_get_metrics_and_balance",
+        "track_get_meetings",
+        "track_get_catalogs"
+      ]
     }
   }
 }
 ```
 
-> **✨ ¡Configuración Mínima (Zero-Config)!**  
-> El servidor MCP deduce **automáticamente** al iniciar sesión:
-> - El **ID del Responsable**
-> - El **Nombre Completo del Usuario**
-> - El **Servicio Predeterminado** asignado al usuario
-> 
-> *No es necesario ingresar manualmente IDs de responsable o servicio.*
-
-
-5. Guarda el archivo. Cline detectará y activará automáticamente las 12 herramientas (indicador en verde).
-
----
-
-## 3. Conexión con Roo Code (Extensión de VS Code)
+### 2. Configuración en Roo Code (`roo_code_mcp_settings.json`)
 
 1. En VS Code, abre la pestaña de **Roo Code**.
-2. Abre la configuración de MCP (**MCP Servers** en el panel superior).
-3. Haz clic en **"Edit MCP Settings"** (abrirá `roo_code_mcp_settings.json`).
-4. Pega la configuración equivalente (disponible en [`roo_code_mcp_settings.json`](./roo_code_mcp_settings.json)).
-5. Guarda el archivo y reinicia el servidor desde la interfaz de Roo Code si es necesario.
+2. Ve a la sección **MCP Servers**.
+3. Haz clic en **Edit MCP Settings** y añade:
+
+```json
+{
+  "mcpServers": {
+    "activity-tracking": {
+      "type": "sse",
+      "url": "http://10.185.1.2:3333/sse",
+      "headers": {
+        "X-Auth-Username": "tu.usuario",
+        "X-Auth-Password": "TuPasswordInstitucional"
+      },
+      "alwaysAllow": [
+        "track_get_sprint_work_items",
+        "track_get_my_activities",
+        "track_get_activity_detail",
+        "track_get_metrics_and_balance",
+        "track_get_meetings",
+        "track_get_catalogs"
+      ]
+    }
+  }
+}
+```
+
+> **🔐 Seguridad y Aislamiento Dinámico:**  
+> Las cabeceras `X-Auth-Username` y `X-Auth-Password` viajan protegidas en cada petición de tu VS Code. El servidor central adquiere un token JWT exclusivo para tu usuario en memoria volátil y ejecuta las consultas y registros en la API estrictamente a tu nombre.
 
 ---
 
-## 4. Pruebas y Prompts Recomendados en el Chat
+## 🛠️ Método Alternativo: Ejecución Local Offline (`stdio`)
 
-Una vez conectado, puedes interactuar en lenguaje natural con tu asistente:
+Si trabajas en modo desarrollo sobre el código fuente del MCP o fuera de la red del contenedor:
 
-### A. Consultas de Lectura Segura (Zero Impact):
-
-$\rightarrow$ El asistente activará `track_get_sprint_work_items(sprintId: 1176)`.
-$\rightarrow$ El asistente activará `track_get_my_activities(responsibleId: 6, status: "InProgress")`.
-$\rightarrow$ El asistente activará `track_get_metrics_and_balance(period: "current_week")`.
-$\rightarrow$ El asistente activará `track_get_meetings()`.
-
-### B. Pruebas de Registro con Modo Dry-Run (Simulación Segura):
-
-- _"Registra que hoy trabajé 3.5 horas en el desarrollo de la vista de usuarios para Comunidad Informática y déjala en progreso al 60%."_
-  $\rightarrow$ El asistente activará `track_create_activity`.
-  -> Al estar activo `DRY_RUN_MODE=true`, el servidor validará esquemas, inferirá `projectId: 11` (CI) y `serviceId: 4` (Cooperación en TIC). Para una escritura real también debe incluirse un `productId` compatible; así se habilita el seguimiento por etapas.
-
----
-
-## 5. Hoja de Ruta para Operación de Escritura Real (Futuro)
-
-Cuando el flujo esté 100% probado y decidas habilitar la escritura directa en producción:
-
-1. En `.env` o en la configuración del cliente MCP, cambia:
+1. Compila el proyecto:
    ```bash
-   DRY_RUN_MODE=false
+   npm run build
    ```
-2. Para actividades experimentales, podrás pasar opcionalmente `isProposal: true` para que se registren como propuestas o borradores aislados de las métricas principales.
+2. Configura tu cliente MCP con transporte `command`:
+   ```json
+   {
+     "mcpServers": {
+       "activity-tracking-local": {
+         "command": "node",
+         "args": ["d:\\TRABAJO\\MCP_ActivityTracking\\dist\\index.js", "--stdio"],
+         "env": {
+           "API_BASE_URL": "http://10.200.1.13:5100",
+           "AUTH_USERNAME": "tu.usuario",
+           "AUTH_PASSWORD": "TuPasswordAqui",
+           "DRY_RUN_MODE": "true"
+         }
+       }
+     }
+   }
+   ```
+
+---
+
+## 💬 Pruebas y Ejemplos de Prompts en el Chat
+
+Una vez conectado, tu asistente IA reconocerá las herramientas automáticamente:
+
+### Consultas de Lectura (Inmediatas y Seguras):
+- _"¿Qué tareas tengo asignadas en mis actividades activas?"_  
+  $\rightarrow$ Invoca `track_get_my_activities`.
+- _"Muestra el resumen de work items del Sprint 1176."_  
+  $\rightarrow$ Invoca `track_get_sprint_work_items`.
+- _"¿Cuántas horas llevo reportadas esta semana y cuánto me falta de mi capacidad?"_  
+  $\rightarrow$ Invoca `track_get_metrics_and_balance`.
+
+### Registro Asistido por Lenguaje Natural (Modo Dry-Run):
+- _"Registra que hoy trabajé 3 horas en la revisión técnica para Comunidad Informática."_  
+  $\rightarrow$ Invoca `track_create_activity`. Con `DRY_RUN_MODE=true` activo, validará el formato institucional sin insertar datos en producción.
