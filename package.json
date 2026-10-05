@@ -1,0 +1,41 @@
+{
+  "name": "activity-tracking-mcp-server",
+  "version": "1.0.0",
+  "description": "Servidor MCP en TypeScript/Node.js para seguimiento automatizado de actividades con Activity Tracking API",
+  "main": "dist/index.js",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc --watch",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts",
+    "test:read": "tsx test/test-read-only.ts",
+    "test:dryrun": "tsx test/test-dry-run.ts"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "activity-tracking",
+    "vscode",
+    "typescript"
+  ],
+  "author": "Brayan Ulises Vázquez Heredia",
+  "license": "ISC",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.6.0",
+    "axios": "^1.7.9",
+    "date-fns": "^4.1.0",
+    "dotenv": "^16.4.7",
+    "form-data": "^4.0.2",
+    "mime-types": "^2.1.35",
+    "zod": "^3.24.2",
+    "zod-to-json-schema": "^3.24.3"
+  },
+  "devDependencies": {
+    "@types/form-data": "^2.5.0",
+    "@types/mime-types": "^2.1.4",
+    "@types/node": "^22.13.5",
+    "tsx": "^4.19.3",
+    "typescript": "^5.7.3"
+  }
+}

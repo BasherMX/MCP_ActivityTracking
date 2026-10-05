@@ -1,0 +1,27 @@
+{
+  "mcpServers": {
+    "activity-tracking": {
+      "command": "node",
+      "args": [
+        "C:\\Users\\Ulises\\Downloads\\utils vs code\\ActivityTracking\\MCP_ActivityTracking\\dist\\index.js"
+      ],
+      "env": {
+        "API_BASE_URL": "http://10.200.1.13:5100",
+        "DRY_RUN_MODE": "true",
+        "AUTH_USERNAME": "brayan.vazquez",
+        "AUTH_PASSWORD": "TU_PASSWORD_AQUI",
+        "DEFAULT_RESPONSIBLE_ID": "6",
+        "DEFAULT_PROJECT_ID": "11",
+        "DEFAULT_SERVICE_ID": "5"
+      },
+      "alwaysAllow": [
+        "track_get_sprint_work_items",
+        "track_get_my_activities",
+        "track_get_activity_detail",
+        "track_get_metrics_and_balance",
+        "track_get_meetings",
+        "track_get_catalogs"
+      ]
+    }
+  }
+}
