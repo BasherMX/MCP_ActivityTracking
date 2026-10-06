@@ -104,6 +104,7 @@ npm run test:sse
 
 ---
 
-## 📋 Configuración en VS Code
+## 📋 Guías de Configuración por Cliente
 
-Consulta el archivo [VSCODE_SETUP.md](./VSCODE_SETUP.md) para la guía completa de configuración en Cline, Roo Code y GitHub Copilot.
+* **VS Code (Cline, Roo Code y GitHub Copilot):** Consulta [VSCODE_SETUP.md](./VSCODE_SETUP.md).
+* **Claude Desktop:** Consulta [docs/CLAUDE_DESKTOP_SETUP.md](./docs/CLAUDE_DESKTOP_SETUP.md).

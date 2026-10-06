@@ -8,7 +8,7 @@ const envSchema = z.object({
     .string()
     .default("3333")
     .transform((val) => parseInt(val, 10)),
-  HOST: z.string().default("0.0.0.0"),
+  HOST: z.string().default("::"),
   MCP_TRANSPORT: z
     .enum(["stdio", "sse", "both"])
     .default("both"),

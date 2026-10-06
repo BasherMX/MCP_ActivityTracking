@@ -1,0 +1,12 @@
+{
+  "servers": {
+    "sistema-seguimiento": {
+      "type": "sse",
+      "url": "http://localhost:3333/sse",
+      "headers": {
+        "X-Auth-Username": "brayan.vazquez",
+        "X-Auth-Password": "ENCHILADASverdes$100"
+      }
+    }
+  }
+}
