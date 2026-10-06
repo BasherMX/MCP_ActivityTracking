@@ -61,8 +61,45 @@ export class ActivityService {
     }
   }
 
+  private allActivitiesCache: (ActivityListDto & { responsibleName?: string })[] | null = null;
+  private allActivitiesTimestamp = 0;
+  private readonly CACHE_TTL = 30 * 1000; // 30 segundos
+
   /**
-   * Resuelve un identificador de actividad (numérico 9758 o clave 'CI095', 'G114') a su ID numérico real.
+   * Obtiene todas las actividades del sistema en memoria con caché rápido (30s).
+   */
+  public async getAllActivities(forceRefresh = false): Promise<(ActivityListDto & { responsibleName?: string })[]> {
+    const now = Date.now();
+    if (!forceRefresh && this.allActivitiesCache && now - this.allActivitiesTimestamp < this.CACHE_TTL) {
+      return this.allActivitiesCache;
+    }
+
+    await authManager.getValidToken();
+    const responsibles = await catalogService.getResponsibles();
+
+    const allActs: (ActivityListDto & { responsibleName?: string })[] = [];
+    await Promise.all(
+      responsibles.map(async (resp) => {
+        try {
+          const res = await apiClient.get<ActivityListDto[]>(`/api/v1/Activities/by-responsible/${resp.id}`);
+          const acts = res.data || [];
+          for (const act of acts) {
+            allActs.push({
+              ...act,
+              responsibleName: resp.fullName || act.responsibleName || 'Desconocido',
+            });
+          }
+        } catch {}
+      })
+    );
+
+    this.allActivitiesCache = allActs;
+    this.allActivitiesTimestamp = now;
+    return allActs;
+  }
+
+  /**
+   * Resuelve un identificador de actividad (numérico 9758 o clave 'CI095', 'G114', 'actividad G114') a su ID numérico real.
    */
   public async resolveNumericActivityId(
     identifier: number | string,
@@ -70,51 +107,42 @@ export class ActivityService {
     if (typeof identifier === "number") {
       return identifier;
     }
-    const trimmed = String(identifier).trim();
-    if (/^\d+$/.test(trimmed)) {
-      return parseInt(trimmed, 10);
+    const rawStr = String(identifier).trim();
+    if (/^\d+$/.test(rawStr)) {
+      return parseInt(rawStr, 10);
     }
 
-    await authManager.getValidToken();
-    const cleanKey = trimmed.toUpperCase().replace(/[-_]/g, "");
+    // Extraer clave de actividad (ej. de "actividad G114" o "G-114" o "CI095" -> "G114", "CI095")
+    const keyMatch = rawStr.match(/\b([A-Za-z]{1,5}[-_]?\d{1,5})\b/);
+    const targetKey = keyMatch ? keyMatch[1] : rawStr;
+    const cleanKey = targetKey.toUpperCase().replace(/[-_]/g, "");
 
-    // 1. Buscar en las actividades del responsable actual
-    try {
-      const myActivities = await this.getMyActivities(undefined, "All");
-      const found = myActivities.find(
-        (a) =>
-          a.activityId?.toUpperCase().replace(/[-_]/g, "") === cleanKey ||
-          a.activityId?.toUpperCase() === trimmed.toUpperCase(),
-      );
-      if (found) return found.id;
-    } catch {}
+    const allActivities = await this.getAllActivities();
 
-    // 2. Buscar en paralelo en todos los responsables activos del sistema
-    try {
-      const responsibles = await catalogService.getResponsibles();
-      const results = await Promise.all(
-        responsibles.map(async (resp) => {
-          try {
-            const res = await apiClient.get<ActivityListDto[]>(
-              `/api/v1/Activities/by-responsible/${resp.id}`,
-            );
-            const acts = res.data || [];
-            return acts.find(
-              (a) =>
-                a.activityId?.toUpperCase().replace(/[-_]/g, "") === cleanKey ||
-                a.activityId?.toUpperCase() === trimmed.toUpperCase(),
-            );
-          } catch {
-            return undefined;
-          }
-        }),
-      );
-      const foundInAny = results.find(Boolean);
-      if (foundInAny) return foundInAny.id;
-    } catch {}
+    // 1. Coincidencia exacta por clave de actividad
+    const exactMatch = allActivities.find((a) => {
+      const actKeyClean = a.activityId?.toUpperCase().replace(/[-_]/g, "") || "";
+      return actKeyClean === cleanKey || a.activityId?.toUpperCase() === targetKey.toUpperCase();
+    });
+    if (exactMatch) return exactMatch.id;
+
+    // 2. Coincidencia por ID numérico en texto
+    const numMatch = rawStr.match(/\b(\d{3,6})\b/);
+    if (numMatch) {
+      const targetId = parseInt(numMatch[1], 10);
+      const byId = allActivities.find((a) => a.id === targetId);
+      if (byId) return byId.id;
+    }
+
+    // 3. Coincidencia parcial si contiene el número de clave (ej. "114")
+    const partialMatch = allActivities.find((a) => {
+      const actKeyClean = a.activityId?.toUpperCase().replace(/[-_]/g, "") || "";
+      return actKeyClean.includes(cleanKey) || cleanKey.includes(actKeyClean);
+    });
+    if (partialMatch) return partialMatch.id;
 
     throw new Error(
-      `No se encontró la actividad con clave '${identifier}' en el sistema.`,
+      `No se encontró la actividad '${identifier}' (clave: '${targetKey}') en el sistema.`,
     );
   }
 
@@ -127,67 +155,77 @@ export class ActivityService {
     statusFilter?: string,
     limit = 20,
   ): Promise<any[]> {
-    await authManager.getValidToken();
-    const responsibles = await catalogService.getResponsibles();
+    const allActivities = await this.getAllActivities();
 
-    let targetResponsibles = responsibles;
-    if (responsibleName && responsibleName.trim()) {
-      const qResp = responsibleName.toLowerCase().trim();
-      targetResponsibles = responsibles.filter(
-        (r) =>
-          r.fullName?.toLowerCase().includes(qResp) ||
-          r.username?.toLowerCase().includes(qResp),
-      );
-      if (targetResponsibles.length === 0) targetResponsibles = responsibles;
+    const rawQuery = (query || "").trim().toLowerCase();
+    const keyMatch = (query || "").match(/\b([A-Za-z]{1,5}[-_]?\d{1,5})\b/i);
+    const candidateKey = keyMatch ? keyMatch[1].toUpperCase().replace(/[-_]/g, "") : null;
+    const numMatch = (query || "").match(/\b(\d{2,6})\b/);
+    const candidateNum = numMatch ? numMatch[1] : null;
+
+    // Palabras clave ignorando conectores
+    const stopWords = new Set(["la", "el", "los", "las", "un", "una", "de", "del", "en", "para", "por", "esta", "este", "actividad", "tarea"]);
+    const queryTokens = rawQuery
+      .split(/[\s,.-]+/)
+      .filter((w) => w.length > 0 && !stopWords.has(w));
+
+    const qResp = responsibleName ? responsibleName.toLowerCase().trim() : null;
+
+    const scored: { act: any; score: number }[] = [];
+
+    for (const act of allActivities) {
+      if (statusFilter && statusFilter !== "All" && act.status?.toLowerCase() !== statusFilter.toLowerCase()) {
+        continue;
+      }
+
+      if (qResp) {
+        const respText = (act.responsibleName || "").toLowerCase();
+        if (!respText.includes(qResp)) continue;
+      }
+
+      if (!query || rawQuery === "") {
+        scored.push({ act, score: 1 });
+        continue;
+      }
+
+      const actKey = act.activityId ? act.activityId.toUpperCase().replace(/[-_]/g, "") : "";
+      const actKeyRaw = (act.activityId || "").toLowerCase();
+      const desc = (act.description || "").toLowerCase();
+      const proj = (act.projectName || "").toLowerCase();
+      const idStr = String(act.id);
+
+      let score = 0;
+
+      // Coincidencia exacta de clave (máxima relevancia)
+      if (candidateKey && actKey === candidateKey) {
+        score += 100;
+      } else if (candidateKey && actKey.includes(candidateKey)) {
+        score += 50;
+      }
+
+      // Coincidencia de ID numérico
+      if (candidateNum && idStr === candidateNum) {
+        score += 80;
+      } else if (candidateNum && actKeyRaw.includes(candidateNum)) {
+        score += 60;
+      }
+
+      // Coincidencia de tokens
+      for (const token of queryTokens) {
+        if (actKeyRaw.includes(token)) score += 40;
+        if (desc.includes(token)) score += 20;
+        if (proj.includes(token)) score += 10;
+      }
+
+      if (score > 0) {
+        scored.push({ act, score });
+      }
     }
 
-    const cleanQuery = query?.toUpperCase().replace(/[-_]/g, "").trim();
-    const rawQuery = query?.toLowerCase().trim();
+    // Ordenar de mayor a menor relevancia
+    scored.sort((a, b) => b.score - a.score);
 
-    const matches: any[] = [];
-
-    await Promise.all(
-      targetResponsibles.map(async (resp) => {
-        try {
-          const res = await apiClient.get<ActivityListDto[]>(
-            `/api/v1/Activities/by-responsible/${resp.id}`,
-          );
-          const acts = res.data || [];
-          for (const act of acts) {
-            if (
-              statusFilter &&
-              statusFilter !== "All" &&
-              act.status?.toLowerCase() !== statusFilter.toLowerCase()
-            ) {
-              continue;
-            }
-
-            let isMatch = !query || query.trim() === "";
-            if (query && query.trim()) {
-              const actKeyClean =
-                act.activityId?.toUpperCase().replace(/[-_]/g, "") || "";
-              const desc = act.description?.toLowerCase() || "";
-              const proj = act.projectName?.toLowerCase() || "";
-
-              isMatch =
-                actKeyClean === cleanQuery ||
-                act.activityId?.toLowerCase().includes(rawQuery!) ||
-                desc.includes(rawQuery!) ||
-                proj.includes(rawQuery!);
-            }
-
-            if (isMatch) {
-              matches.push({
-                ...act,
-                responsibleName: resp.fullName || act.responsibleName,
-              });
-            }
-          }
-        } catch {}
-      }),
-    );
-
-    return matches.slice(0, limit);
+    return scored.slice(0, limit).map((s) => s.act);
   }
 
   /**
