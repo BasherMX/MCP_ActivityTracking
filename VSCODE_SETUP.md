@@ -1,26 +1,42 @@
-# Guía de Conexión e Integración con VS Code: Servidor MCP Activity Tracking
+# Guía de instalación del MCP Activity Tracking en VS Code
 
-Esta guía explica paso a paso cómo conectar este servidor MCP a tu entorno de desarrollo en VS Code (Cline, Roo Code o GitHub Copilot) utilizando la arquitectura **Centralizada en Podman (SSE Multi-Usuario)** o mediante ejecución local por **Stdio**.
+Esta guía conecta VS Code, GitHub Copilot Chat, Cline o Roo Code al servidor MCP del Sistema de Seguimiento.
 
 ---
 
-## 🚀 Método Recomendado: Conexión al Servidor Central Podman (SSE)
+## Conexión desde VS Code y GitHub Copilot
 
-Con este método **NO necesitas instalar Node.js, compilar código, clonar repositorios ni configurar archivos `.env` locales**. El servidor central atiende peticiones en tiempo real aislando las credenciales y sesiones de cada desarrollador.
+El servidor está disponible en `http://172.20.117.246:3333`. La dirección `/health` permite comprobar disponibilidad; VS Code debe conectarse a `/sse`.
 
-### 1. Configuración en Cline (`cline_mcp_settings.json`)
+1. Abre esta carpeta del proyecto en VS Code. Ya incluye `.vscode/mcp.json` con la conexión lista.
+2. Abre la paleta de comandos con `Ctrl+Shift+P` y ejecuta `MCP: List Servers`.
+3. Selecciona `sistema-seguimiento` y pulsa **Start** si aparece detenido. VS Code solicitará el usuario y la contraseña institucional.
+4. Abre GitHub Copilot Chat y utiliza el selector de herramientas para habilitar las herramientas de `sistema-seguimiento`.
 
-1. En VS Code, abre el panel de **Cline**.
-2. Haz clic en el ícono de engranaje (**Settings**) $\rightarrow$ **MCP Servers**.
-3. Haz clic en **Edit MCP Settings**.
-4. Agrega o sustituye la configuración:
+Para configurar MCP en otro workspace, ejecuta `MCP: Open User Configuration` desde la paleta de comandos y copia la sección `inputs` y el servidor `sistema-seguimiento` desde `.vscode/mcp.json`.
+
+No guardes la contraseña directamente en el JSON ni compartas una configuración que la contenga. Esta conexión utiliza HTTP sin TLS: úsala únicamente en una red de confianza. Para exponerla fuera de esa red, coloca el servicio detrás de un proxy HTTPS.
+
+### Comprobación de conexión
+
+Abre `http://172.20.117.246:3333/health` en el navegador. Debe responder JSON con `"status":"ok"`. También puedes verificarlo desde PowerShell:
+
+```powershell
+Invoke-RestMethod -Uri 'http://172.20.117.246:3333/health'
+```
+
+La IP pertenece a la interfaz de red de la máquina virtual de Podman y puede cambiar al reiniciarla. Si cambia, actualiza la URL de `.vscode/mcp.json` y reinicia el servidor MCP desde `MCP: List Servers`.
+
+## Cline: conexión SSE
+
+En VS Code, abre **Cline → Settings → MCP Servers → Edit MCP Settings** y agrega la configuración al objeto `mcpServers`:
 
 ```json
 {
   "mcpServers": {
     "activity-tracking": {
       "type": "sse",
-      "url": "http://10.185.1.2:3333/sse",
+      "url": "http://172.20.117.246:3333/sse",
       "headers": {
         "X-Auth-Username": "tu.usuario",
         "X-Auth-Password": "TuPasswordInstitucional"
@@ -39,18 +55,16 @@ Con este método **NO necesitas instalar Node.js, compilar código, clonar repos
 }
 ```
 
-### 2. Configuración en Roo Code (`roo_code_mcp_settings.json`)
+## Roo Code: conexión SSE
 
-1. En VS Code, abre la pestaña de **Roo Code**.
-2. Ve a la sección **MCP Servers**.
-3. Haz clic en **Edit MCP Settings** y añade:
+Abre **Roo Code → MCP Servers → Edit MCP Settings** y agrega la configuración al objeto `mcpServers`:
 
 ```json
 {
   "mcpServers": {
     "activity-tracking": {
       "type": "sse",
-      "url": "http://10.185.1.2:3333/sse",
+      "url": "http://172.20.117.246:3333/sse",
       "headers": {
         "X-Auth-Username": "tu.usuario",
         "X-Auth-Password": "TuPasswordInstitucional"
@@ -68,14 +82,11 @@ Con este método **NO necesitas instalar Node.js, compilar código, clonar repos
 }
 ```
 
-> **🔐 Seguridad y Aislamiento Dinámico:**  
-> Las cabeceras `X-Auth-Username` y `X-Auth-Password` viajan protegidas en cada petición de tu VS Code. El servidor central adquiere un token JWT exclusivo para tu usuario en memoria volátil y ejecuta las consultas y registros en la API estrictamente a tu nombre.
+El cliente envía las cabeceras `X-Auth-Username` y `X-Auth-Password` al servidor MCP para autenticar las solicitudes en la API.
 
----
+## Ejecución local alternativa (`stdio`)
 
-## 🛠️ Método Alternativo: Ejecución Local Offline (`stdio`)
-
-Si trabajas en modo desarrollo sobre el código fuente del MCP o fuera de la red del contenedor:
+Si desarrollas este repositorio o no tienes acceso a la red del contenedor:
 
 1. Compila el proyecto:
    ```bash
@@ -87,7 +98,10 @@ Si trabajas en modo desarrollo sobre el código fuente del MCP o fuera de la red
      "mcpServers": {
        "activity-tracking-local": {
          "command": "node",
-         "args": ["d:\\TRABAJO\\MCP_ActivityTracking\\dist\\index.js", "--stdio"],
+         "args": [
+           "d:\\TRABAJO\\MCP_ActivityTracking\\dist\\index.js",
+           "--stdio"
+         ],
          "env": {
            "API_BASE_URL": "http://10.200.1.13:5100",
            "AUTH_USERNAME": "tu.usuario",
@@ -101,11 +115,12 @@ Si trabajas en modo desarrollo sobre el código fuente del MCP o fuera de la red
 
 ---
 
-## 💬 Pruebas y Ejemplos de Prompts en el Chat
+## Ejemplos para probar las herramientas
 
 Una vez conectado, tu asistente IA reconocerá las herramientas automáticamente:
 
-### Consultas de Lectura (Inmediatas y Seguras):
+### Consultas de lectura
+
 - _"¿Qué tareas tengo asignadas en mis actividades activas?"_  
   $\rightarrow$ Invoca `track_get_my_activities`.
 - _"Muestra el resumen de work items del Sprint 1176."_  
@@ -113,6 +128,7 @@ Una vez conectado, tu asistente IA reconocerá las herramientas automáticamente
 - _"¿Cuántas horas llevo reportadas esta semana y cuánto me falta de mi capacidad?"_  
   $\rightarrow$ Invoca `track_get_metrics_and_balance`.
 
-### Registro Asistido por Lenguaje Natural (Modo Dry-Run):
+### Registro en modo Dry-Run
+
 - _"Registra que hoy trabajé 3 horas en la revisión técnica para Comunidad Informática."_  
   $\rightarrow$ Invoca `track_create_activity`. Con `DRY_RUN_MODE=true` activo, validará el formato institucional sin insertar datos en producción.

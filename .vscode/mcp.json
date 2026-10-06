@@ -1,11 +1,24 @@
 {
+  "inputs": [
+    {
+      "type": "promptString",
+      "id": "activity-tracking-username",
+      "description": "Usuario institucional"
+    },
+    {
+      "type": "promptString",
+      "id": "activity-tracking-password",
+      "description": "Contrasena institucional",
+      "password": true
+    }
+  ],
   "servers": {
     "sistema-seguimiento": {
       "type": "sse",
-      "url": "http://localhost:3333/sse",
+      "url": "http://172.20.117.246:3333/sse",
       "headers": {
-        "X-Auth-Username": "brayan.vazquez",
-        "X-Auth-Password": "ENCHILADASverdes$100"
+        "X-Auth-Username": "${input:activity-tracking-username}",
+        "X-Auth-Password": "${input:activity-tracking-password}"
       }
     }
   }
