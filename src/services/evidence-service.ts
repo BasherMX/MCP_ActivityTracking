@@ -4,55 +4,98 @@ import mime from 'mime-types';
 import FormData from 'form-data';
 import { apiClient } from './api-client.js';
 import { authManager } from './auth-manager.js';
+import { activityService } from './activity-service.js';
 import { env } from '../config/env.js';
 import { logger } from '../utils/logger.js';
 
+export interface UploadEvidenceOptions {
+  filePath?: string;
+  fileName?: string;
+  content?: string;
+  fileContent?: string;
+  fileContentBase64?: string;
+  description?: string;
+  mimeType?: string;
+}
+
 export class EvidenceService {
   /**
-   * Adjunta un archivo binario local como evidencia de una actividad.
+   * Adjunta un archivo de evidencia a una actividad (soporta archivo local, texto directo o Base64).
+   * Funciona transparentemente en entornos locales y contenedores Podman/Docker sin filesystem compartido.
    * SEGURIDAD EN PRODUCCIÓN: Si dryRun es true, valida existencia y tipo sin subir nada.
    */
   public async uploadEvidenceFile(
-    activityId: number,
-    filePath: string,
+    activityIdentifier: number | string,
+    options: UploadEvidenceOptions | string,
     description?: string,
     dryRun = true
   ): Promise<any> {
-    const isDryRun = dryRun !== undefined ? dryRun : env.DRY_RUN_MODE;
-    const resolvedPath = path.resolve(filePath);
+    const targetOptions: UploadEvidenceOptions =
+      typeof options === 'string'
+        ? { filePath: options, description }
+        : options;
 
-    if (!fs.existsSync(resolvedPath)) {
-      throw new Error(`El archivo local no existe en la ruta: ${resolvedPath}`);
+    const isDryRun = dryRun !== undefined ? dryRun : env.DRY_RUN_MODE;
+    const activityId = await activityService.resolveNumericActivityId(activityIdentifier);
+
+    let fileBuffer: Buffer;
+    let fileName: string;
+    let mimeType: string;
+
+    if (targetOptions.fileContentBase64) {
+      fileBuffer = Buffer.from(targetOptions.fileContentBase64, 'base64');
+      fileName = targetOptions.fileName || (targetOptions.filePath ? path.basename(targetOptions.filePath) : 'evidencia.bin');
+      mimeType = targetOptions.mimeType || (mime.lookup(fileName) as string) || 'application/octet-stream';
+    } else if (targetOptions.content !== undefined || targetOptions.fileContent !== undefined) {
+      const textContent = targetOptions.content !== undefined ? targetOptions.content : targetOptions.fileContent!;
+      fileBuffer = Buffer.from(textContent, 'utf-8');
+      fileName = targetOptions.fileName || (targetOptions.filePath ? path.basename(targetOptions.filePath) : 'evidencia.md');
+      mimeType = targetOptions.mimeType || (mime.lookup(fileName) as string) || 'text/markdown';
+    } else if (targetOptions.filePath) {
+      const resolvedPath = path.resolve(targetOptions.filePath);
+      if (fs.existsSync(resolvedPath)) {
+        fileBuffer = fs.readFileSync(resolvedPath);
+        fileName = targetOptions.fileName || path.basename(resolvedPath);
+        mimeType = targetOptions.mimeType || (mime.lookup(resolvedPath) as string) || 'application/octet-stream';
+      } else {
+        throw new Error(
+          `El archivo '${targetOptions.filePath}' no existe en el entorno del servidor MCP. ` +
+          `Si el servidor está en un contenedor Podman/Docker, proporcione el contenido directamente en el argumento 'content' o 'fileContent' (texto) o 'fileContentBase64' (base64) junto con 'fileName' (ej. '${path.basename(targetOptions.filePath)}').`
+        );
+      }
+    } else {
+      throw new Error(
+        "Debe proporcionar 'content'/'fileContent' (texto directo), 'fileContentBase64' (base64) o 'filePath' (ruta local accesible)."
+      );
     }
 
-    const stats = fs.statSync(resolvedPath);
-    const fileName = path.basename(resolvedPath);
-    const mimeType = mime.lookup(resolvedPath) || 'application/octet-stream';
+    const desc = targetOptions.description || description;
 
     if (isDryRun) {
-      logger.warn(`[DRY-RUN INTERCEPTOR] Simulación de subida de archivo para actividad ${activityId}.`);
+      logger.warn(`[DRY-RUN INTERCEPTOR] Simulación de subida de evidencia para actividad ${activityId} (${fileName}).`);
       return {
         dryRun: true,
         status: 'SIMULATION_SUCCESS',
         targetEndpoint: `POST /api/v1/activities/${activityId}/evidence/file`,
+        activityId,
         fileInfo: {
-          path: resolvedPath,
           fileName,
-          sizeBytes: stats.size,
+          sizeBytes: fileBuffer.length,
           mimeType,
-          description: description || 'Sin descripción',
+          description: desc || 'Sin descripción',
         },
-        message: 'Archivo verificado y validado localmente. No se subió a la base de datos (Modo Dry-Run).',
+        message: `Archivo '${fileName}' (${fileBuffer.length} bytes) validado exitosamente. No se subió a producción (Modo Dry-Run).`,
       };
     }
 
     await authManager.getValidToken();
     const form = new FormData();
-    form.append('file', fs.createReadStream(resolvedPath), { filename: fileName, contentType: mimeType });
-    if (description) {
-      form.append('description', description);
+    form.append('file', fileBuffer, { filename: fileName, contentType: mimeType });
+    if (desc) {
+      form.append('description', desc);
     }
 
+    logger.info(`[PRODUCCIÓN REAL] Subiendo evidencia '${fileName}' (${fileBuffer.length} bytes) a actividad ${activityId}...`);
     const response = await apiClient.post(`/api/v1/activities/${activityId}/evidence/file`, form, {
       headers: {
         ...form.getHeaders(),
@@ -67,12 +110,13 @@ export class EvidenceService {
    * SEGURIDAD EN PRODUCCIÓN: Si dryRun es true, valida URI sin llamar a la API.
    */
   public async attachEvidenceUrl(
-    activityId: number,
+    activityIdentifier: number | string,
     url: string,
     description?: string,
     dryRun = true
   ): Promise<any> {
     const isDryRun = dryRun !== undefined ? dryRun : env.DRY_RUN_MODE;
+    const activityId = await activityService.resolveNumericActivityId(activityIdentifier);
 
     // Validación básica de URL
     new URL(url);
@@ -100,3 +144,4 @@ export class EvidenceService {
 }
 
 export const evidenceService = new EvidenceService();
+

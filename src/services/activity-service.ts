@@ -62,9 +62,141 @@ export class ActivityService {
   }
 
   /**
-   * Obtiene el detalle completo de una actividad por su ID numérico (100% LECTURA).
+   * Resuelve un identificador de actividad (numérico 9758 o clave 'CI095', 'G114') a su ID numérico real.
    */
-  public async getActivityDetail(id: number): Promise<ActivityDto> {
+  public async resolveNumericActivityId(
+    identifier: number | string,
+  ): Promise<number> {
+    if (typeof identifier === "number") {
+      return identifier;
+    }
+    const trimmed = String(identifier).trim();
+    if (/^\d+$/.test(trimmed)) {
+      return parseInt(trimmed, 10);
+    }
+
+    await authManager.getValidToken();
+    const cleanKey = trimmed.toUpperCase().replace(/[-_]/g, "");
+
+    // 1. Buscar en las actividades del responsable actual
+    try {
+      const myActivities = await this.getMyActivities(undefined, "All");
+      const found = myActivities.find(
+        (a) =>
+          a.activityId?.toUpperCase().replace(/[-_]/g, "") === cleanKey ||
+          a.activityId?.toUpperCase() === trimmed.toUpperCase(),
+      );
+      if (found) return found.id;
+    } catch {}
+
+    // 2. Buscar en paralelo en todos los responsables activos del sistema
+    try {
+      const responsibles = await catalogService.getResponsibles();
+      const results = await Promise.all(
+        responsibles.map(async (resp) => {
+          try {
+            const res = await apiClient.get<ActivityListDto[]>(
+              `/api/v1/Activities/by-responsible/${resp.id}`,
+            );
+            const acts = res.data || [];
+            return acts.find(
+              (a) =>
+                a.activityId?.toUpperCase().replace(/[-_]/g, "") === cleanKey ||
+                a.activityId?.toUpperCase() === trimmed.toUpperCase(),
+            );
+          } catch {
+            return undefined;
+          }
+        }),
+      );
+      const foundInAny = results.find(Boolean);
+      if (foundInAny) return foundInAny.id;
+    } catch {}
+
+    throw new Error(
+      `No se encontró la actividad con clave '${identifier}' en el sistema.`,
+    );
+  }
+
+  /**
+   * Buscador global de actividades por clave, descripción o texto libre en todo el sistema.
+   */
+  public async searchActivities(
+    query?: string,
+    responsibleName?: string,
+    statusFilter?: string,
+    limit = 20,
+  ): Promise<any[]> {
+    await authManager.getValidToken();
+    const responsibles = await catalogService.getResponsibles();
+
+    let targetResponsibles = responsibles;
+    if (responsibleName && responsibleName.trim()) {
+      const qResp = responsibleName.toLowerCase().trim();
+      targetResponsibles = responsibles.filter(
+        (r) =>
+          r.fullName?.toLowerCase().includes(qResp) ||
+          r.username?.toLowerCase().includes(qResp),
+      );
+      if (targetResponsibles.length === 0) targetResponsibles = responsibles;
+    }
+
+    const cleanQuery = query?.toUpperCase().replace(/[-_]/g, "").trim();
+    const rawQuery = query?.toLowerCase().trim();
+
+    const matches: any[] = [];
+
+    await Promise.all(
+      targetResponsibles.map(async (resp) => {
+        try {
+          const res = await apiClient.get<ActivityListDto[]>(
+            `/api/v1/Activities/by-responsible/${resp.id}`,
+          );
+          const acts = res.data || [];
+          for (const act of acts) {
+            if (
+              statusFilter &&
+              statusFilter !== "All" &&
+              act.status?.toLowerCase() !== statusFilter.toLowerCase()
+            ) {
+              continue;
+            }
+
+            let isMatch = !query || query.trim() === "";
+            if (query && query.trim()) {
+              const actKeyClean =
+                act.activityId?.toUpperCase().replace(/[-_]/g, "") || "";
+              const desc = act.description?.toLowerCase() || "";
+              const proj = act.projectName?.toLowerCase() || "";
+
+              isMatch =
+                actKeyClean === cleanQuery ||
+                act.activityId?.toLowerCase().includes(rawQuery!) ||
+                desc.includes(rawQuery!) ||
+                proj.includes(rawQuery!);
+            }
+
+            if (isMatch) {
+              matches.push({
+                ...act,
+                responsibleName: resp.fullName || act.responsibleName,
+              });
+            }
+          }
+        } catch {}
+      }),
+    );
+
+    return matches.slice(0, limit);
+  }
+
+  /**
+   * Obtiene el detalle completo de una actividad por su ID numérico o clave (100% LECTURA).
+   */
+  public async getActivityDetail(
+    idOrKey: number | string,
+  ): Promise<ActivityDto> {
+    const id = await this.resolveNumericActivityId(idOrKey);
     await authManager.getValidToken();
 
     try {
@@ -194,14 +326,15 @@ export class ActivityService {
   }
 
   /**
-   * Actualiza el avance o estado de una actividad.
+   * Actualiza el avance, estado o campos de una actividad (permite actividades de cualquier responsable).
    * SEGURIDAD EN PRODUCCIÓN: Interceptado en modo dry-run.
    */
   public async updateActivity(
-    id: number,
+    idOrKey: number | string,
     data: UpdateActivityDto,
     dryRun = true,
   ): Promise<any> {
+    const id = await this.resolveNumericActivityId(idOrKey);
     const isDryRun = dryRun !== undefined ? dryRun : env.DRY_RUN_MODE;
 
     if (isDryRun) {
@@ -222,19 +355,17 @@ export class ActivityService {
 
     await authManager.getValidToken();
     let payload: any = { ...data };
-    if (!data.description || !(data as any).projectId) {
-      try {
-        const existing = await this.getActivityDetail(id);
-        payload = {
-          ...existing,
-          ...data,
-        };
-      } catch (err: any) {
-        logger.warn(
-          `No se pudo obtener el detalle previo de la actividad ${id}, enviando payload directo:`,
-          err.message,
-        );
-      }
+    try {
+      const existing = await this.getActivityDetail(id);
+      payload = {
+        ...existing,
+        ...data,
+      };
+    } catch (err: any) {
+      logger.warn(
+        `No se pudo obtener el detalle previo de la actividad ${id}, enviando payload directo:`,
+        err.message,
+      );
     }
     const response = await apiClient.put<ActivityDto>(
       `/api/v1/Activities/${id}`,
@@ -248,11 +379,12 @@ export class ActivityService {
    * SEGURIDAD EN PRODUCCIÓN: Interceptado en modo dry-run.
    */
   public async closeActivity(
-    id: number,
+    idOrKey: number | string,
     actualHours?: number,
     completionNotes?: string,
     dryRun = true,
   ): Promise<any> {
+    const id = await this.resolveNumericActivityId(idOrKey);
     const isDryRun = dryRun !== undefined ? dryRun : env.DRY_RUN_MODE;
     const nowIso = new Date().toISOString();
 
@@ -296,10 +428,15 @@ export class ActivityService {
   public async getProcessStagesByProduct(productId: number): Promise<any[]> {
     await authManager.getValidToken();
     try {
-      const response = await apiClient.get(`/api/v1/process-stages/by-product/${productId}`);
+      const response = await apiClient.get(
+        `/api/v1/process-stages/by-product/${productId}`,
+      );
       return response.data || [];
     } catch (error: any) {
-      logger.error(`Error al consultar etapas del producto ${productId}:`, error.message);
+      logger.error(
+        `Error al consultar etapas del producto ${productId}:`,
+        error.message,
+      );
       return [];
     }
   }
@@ -310,10 +447,15 @@ export class ActivityService {
   public async getProcessStageHistory(activityId: number): Promise<any[]> {
     await authManager.getValidToken();
     try {
-      const response = await apiClient.get(`/api/v1/process-stages/activity/${activityId}/history`);
+      const response = await apiClient.get(
+        `/api/v1/process-stages/activity/${activityId}/history`,
+      );
       return response.data || [];
     } catch (error: any) {
-      logger.error(`Error al consultar historial de etapas para actividad ${activityId}:`, error.message);
+      logger.error(
+        `Error al consultar historial de etapas para actividad ${activityId}:`,
+        error.message,
+      );
       return [];
     }
   }
@@ -327,15 +469,17 @@ export class ActivityService {
     stageId: number,
     assignedToId = env.DEFAULT_RESPONSIBLE_ID,
     notes?: string,
-    dryRun = true
+    dryRun = true,
   ): Promise<any> {
     const isDryRun = dryRun !== undefined ? dryRun : env.DRY_RUN_MODE;
 
     if (isDryRun) {
-      logger.warn(`[DRY-RUN INTERCEPTOR] Simulación de avance de etapa para actividad ${activityId}.`);
+      logger.warn(
+        `[DRY-RUN INTERCEPTOR] Simulación de avance de etapa para actividad ${activityId}.`,
+      );
       return {
         dryRun: true,
-        status: 'SIMULATION_SUCCESS',
+        status: "SIMULATION_SUCCESS",
         targetEndpoint: `POST /api/v1/process-stages/activity/${activityId}/advance`,
         activityId,
         stageId,
@@ -346,12 +490,17 @@ export class ActivityService {
     }
 
     await authManager.getValidToken();
-    logger.info(`[PRODUCCIÓN REAL] Avanzando actividad ${activityId} a la etapa ${stageId}...`);
-    const response = await apiClient.post(`/api/v1/process-stages/activity/${activityId}/advance`, {
-      stageId,
-      assignedToId,
-      notes,
-    });
+    logger.info(
+      `[PRODUCCIÓN REAL] Avanzando actividad ${activityId} a la etapa ${stageId}...`,
+    );
+    const response = await apiClient.post(
+      `/api/v1/process-stages/activity/${activityId}/advance`,
+      {
+        stageId,
+        assignedToId,
+        notes,
+      },
+    );
     return response.data;
   }
 
@@ -363,10 +512,12 @@ export class ActivityService {
     assignedToId = env.DEFAULT_RESPONSIBLE_ID,
     notes?: string,
     dryRun = true,
-    productId?: number
+    productId?: number,
   ): Promise<any> {
     const isDryRun = dryRun !== undefined ? dryRun : env.DRY_RUN_MODE;
-    logger.info(`Avanzando automáticamente todas las etapas para la actividad ${activityId}...`);
+    logger.info(
+      `Avanzando automáticamente todas las etapas para la actividad ${activityId}...`,
+    );
 
     let stages: any[] = [];
     try {
@@ -395,7 +546,13 @@ export class ActivityService {
     for (const stage of stages) {
       const sId = stage.id || stage.stageId;
       if (sId) {
-        const res = await this.advanceProcessStage(activityId, sId, assignedToId, notes || `Avance automático a etapa ${stage.name || sId}`, dryRun);
+        const res = await this.advanceProcessStage(
+          activityId,
+          sId,
+          assignedToId,
+          notes || `Avance automático a etapa ${stage.name || sId}`,
+          dryRun,
+        );
         results.push({ stageId: sId, stageName: stage.name, result: res });
       }
     }
@@ -416,10 +573,15 @@ export class ActivityService {
   public async getObservations(activityId: number): Promise<any[]> {
     await authManager.getValidToken();
     try {
-      const response = await apiClient.get(`/api/v1/activities/${activityId}/Observations`);
+      const response = await apiClient.get(
+        `/api/v1/activities/${activityId}/Observations`,
+      );
       return response.data || [];
     } catch (error: any) {
-      logger.error(`Error al consultar observaciones de actividad ${activityId}:`, error.message);
+      logger.error(
+        `Error al consultar observaciones de actividad ${activityId}:`,
+        error.message,
+      );
       return [];
     }
   }
@@ -433,15 +595,17 @@ export class ActivityService {
     type: string,
     content: string,
     collaboratorId = env.DEFAULT_RESPONSIBLE_ID,
-    dryRun = true
+    dryRun = true,
   ): Promise<any> {
     const isDryRun = dryRun !== undefined ? dryRun : env.DRY_RUN_MODE;
 
     if (isDryRun) {
-      logger.warn(`[DRY-RUN INTERCEPTOR] Simulación de adición de observación '${type}' para actividad ${activityId}.`);
+      logger.warn(
+        `[DRY-RUN INTERCEPTOR] Simulación de adición de observación '${type}' para actividad ${activityId}.`,
+      );
       return {
         dryRun: true,
-        status: 'SIMULATION_SUCCESS',
+        status: "SIMULATION_SUCCESS",
         targetEndpoint: `POST /api/v1/activities/${activityId}/Observations`,
         activityId,
         type,
@@ -452,28 +616,39 @@ export class ActivityService {
     }
 
     await authManager.getValidToken();
-    logger.info(`[PRODUCCIÓN REAL] Agregando observación tipo '${type}' a actividad ${activityId}...`);
-    const response = await apiClient.post(`/api/v1/activities/${activityId}/Observations`, {
-      activityId,
-      type,
-      content,
-      collaboratorId,
-    });
+    logger.info(
+      `[PRODUCCIÓN REAL] Agregando observación tipo '${type}' a actividad ${activityId}...`,
+    );
+    const response = await apiClient.post(
+      `/api/v1/activities/${activityId}/Observations`,
+      {
+        activityId,
+        type,
+        content,
+        collaboratorId,
+      },
+    );
     return response.data;
   }
 
   /**
-   * Elimina permanentemente una actividad por su ID numérico.
+   * Elimina permanentemente una actividad por su ID numérico o clave.
    * OPERACIÓN CRÍTICA Y PELIGROSA: Interceptada estrictamente en modo dry-run por seguridad.
    */
-  public async deleteActivity(id: number, dryRun = true): Promise<any> {
+  public async deleteActivity(
+    idOrKey: number | string,
+    dryRun = true,
+  ): Promise<any> {
+    const id = await this.resolveNumericActivityId(idOrKey);
     const isDryRun = dryRun !== undefined ? dryRun : env.DRY_RUN_MODE;
 
     if (isDryRun) {
-      logger.warn(`[DRY-RUN INTERCEPTOR] Simulación de eliminación de actividad ${id}.`);
+      logger.warn(
+        `[DRY-RUN INTERCEPTOR] Simulación de eliminación de actividad ${id}.`,
+      );
       return {
         dryRun: true,
-        status: 'SIMULATION_SUCCESS',
+        status: "SIMULATION_SUCCESS",
         targetEndpoint: `DELETE /api/v1/Activities/${id}`,
         activityId: id,
         message: `Simulación de eliminación completada para actividad ${id}. No se realizaron cambios en producción (Modo Dry-Run).`,
@@ -481,7 +656,9 @@ export class ActivityService {
     }
 
     await authManager.getValidToken();
-    logger.warn(`[PRODUCCIÓN REAL] Ejecutando DELETE /api/v1/Activities/${id}...`);
+    logger.warn(
+      `[PRODUCCIÓN REAL] Ejecutando DELETE /api/v1/Activities/${id}...`,
+    );
     const response = await apiClient.delete(`/api/v1/Activities/${id}`);
     return {
       deleted: true,
@@ -494,6 +671,3 @@ export class ActivityService {
 }
 
 export const activityService = new ActivityService();
-
-
-

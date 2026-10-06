@@ -71,7 +71,11 @@ export const GetMyActivitiesSchema = z.object({
     .number()
     .int()
     .optional()
-    .describe("ID del responsable (omita para usar el usuario autenticado por defecto)."),
+    .describe("ID numérico del responsable (omita para usar el usuario autenticado por defecto)."),
+  responsibleName: z
+    .string()
+    .optional()
+    .describe("Nombre o apellido del responsable (ej. 'Adrian', 'Mariana', 'Brayan') para resolver su ID dinámicamente."),
   status: z
     .string()
     .default("InProgress")
@@ -89,11 +93,30 @@ export const GetMyActivitiesSchema = z.object({
     .describe("Filtro opcional por nombre de proyecto."),
 });
 
-export const GetActivityDetailSchema = z.object({
-  id: z
+export const SearchActivitiesSchema = z.object({
+  query: z
+    .string()
+    .optional()
+    .describe("Texto de búsqueda, clave de actividad (ej. 'G114', 'CI095') o palabras clave de la descripción/notas/proyecto."),
+  responsibleName: z
+    .string()
+    .optional()
+    .describe("Filtro opcional por nombre o apellido del responsable (ej. 'Roberto Carlos', 'Adrian', 'Brayan')."),
+  status: z
+    .string()
+    .default("All")
+    .describe("Filtro de estado (InProgress, Pending, Completed, All)."),
+  limit: z
     .number()
     .int()
-    .describe("ID numérico único de la actividad a consultar."),
+    .default(20)
+    .describe("Límite máximo de resultados."),
+});
+
+export const GetActivityDetailSchema = z.object({
+  id: z
+    .union([z.number().int(), z.string()])
+    .describe("ID numérico único (ej. 9758) o clave alfanumérica de la actividad (ej. 'CI095') a consultar."),
 });
 
 export const GetMetricsAndBalanceSchema = z.object({
@@ -161,6 +184,14 @@ export const UpdateMeetingSchema = z.object({
   attendeeIds: z.array(z.number().int()).optional().describe("IDs de responsables asistentes."),
   activityKey: z.string().optional().describe("Clave de la actividad asociada."),
   dryRun: z.boolean().default(true).describe("Modo simulación de seguridad."),
+});
+
+export const DeleteMeetingSchema = z.object({
+  id: z.number().int().describe("ID numérico único de la reunión a eliminar."),
+  dryRun: z
+    .boolean()
+    .default(true)
+    .describe("Modo simulación de seguridad. Especifique dryRun: false para eliminar realmente en la base de datos."),
 });
 
 export const GetCatalogsSchema = z.object({
@@ -255,7 +286,13 @@ export const CreateActivitySchema = z.object({
 });
 
 export const UpdateActivitySchema = z.object({
-  id: z.number().int().describe("ID numérico de la actividad a actualizar."),
+  id: z
+    .union([z.number().int(), z.string()])
+    .describe("ID numérico único (ej. 9758) o clave de actividad (ej. 'CI095') a actualizar."),
+  description: z
+    .string()
+    .optional()
+    .describe("Nueva descripción o título de la actividad."),
   status: z
     .string()
     .optional()
@@ -266,6 +303,42 @@ export const UpdateActivitySchema = z.object({
     .max(100)
     .optional()
     .describe("Porcentaje de avance (0-100)."),
+  responsibleId: z
+    .number()
+    .int()
+    .optional()
+    .describe("ID del responsable asignado a la actividad (permite editar o reasignar actividades de cualquier persona)."),
+  responsibleName: z
+    .string()
+    .optional()
+    .describe("Nombre o apellidos del responsable (ej. 'Adrian', 'Brayan'). Se resuelve dinámicamente si se omite responsibleId."),
+  projectId: z
+    .number()
+    .int()
+    .optional()
+    .describe("ID numérico de proyecto."),
+  projectName: z
+    .string()
+    .optional()
+    .describe("Nombre o prefijo del proyecto."),
+  serviceId: z
+    .number()
+    .int()
+    .optional()
+    .describe("ID numérico de servicio."),
+  type: z
+    .string()
+    .optional()
+    .describe("Tipo de actividad (Development, Maintenance, Planning, Support, etc.)."),
+  priority: z
+    .string()
+    .optional()
+    .describe("Prioridad de la actividad (Low, Medium, High)."),
+  estimatedHours: z
+    .number()
+    .positive()
+    .optional()
+    .describe("Horas estimadas de la actividad."),
   actualStartDate: z
     .string()
     .optional()
@@ -297,6 +370,15 @@ export const UpdateActivitySchema = z.object({
       "Indica que la actividad utiliza seguimiento por producto y etapas.",
     ),
   notes: z.string().optional().describe("Bitácora o notas adicionales."),
+  support: z.string().optional().describe("Ticket o referencia de soporte."),
+  autoComplete: z
+    .boolean()
+    .default(false)
+    .describe("Si es true, marca automáticamente la actividad como Completed al 100% y establece la fecha de cierre."),
+  autoAdvanceStages: z
+    .boolean()
+    .default(false)
+    .describe("Si es true, avanza dinámicamente todas las etapas pendientes del producto hasta completarlo."),
   dryRun: z.boolean().default(true).describe("Modo simulación de seguridad. Especifique dryRun: false para actualizar realmente en BD."),
 });
 
@@ -307,14 +389,15 @@ export const GetProcessStagesSchema = z.object({
     .optional()
     .describe("ID de producto para consultar las etapas de proceso configuradas."),
   activityId: z
-    .number()
-    .int()
+    .union([z.number().int(), z.string()])
     .optional()
-    .describe("ID de actividad para consultar su historial de etapas de proceso."),
+    .describe("ID o clave de actividad para consultar su historial de etapas de proceso."),
 });
 
 export const AdvanceProcessStageSchema = z.object({
-  activityId: z.number().int().describe("ID numérico de la actividad."),
+  activityId: z
+    .union([z.number().int(), z.string()])
+    .describe("ID numérico o clave de la actividad (ej. 9758 o 'CI095')."),
   stageId: z
     .number()
     .int()
@@ -334,11 +417,15 @@ export const AdvanceProcessStageSchema = z.object({
 });
 
 export const GetObservationsSchema = z.object({
-  activityId: z.number().int().describe("ID numérico de la actividad."),
+  activityId: z
+    .union([z.number().int(), z.string()])
+    .describe("ID numérico o clave de la actividad (ej. 9758 o 'CI095')."),
 });
 
 export const AddObservationSchema = z.object({
-  activityId: z.number().int().describe("ID numérico de la actividad."),
+  activityId: z
+    .union([z.number().int(), z.string()])
+    .describe("ID numérico o clave de la actividad (ej. 9758 o 'CI095')."),
   type: z
     .string()
     .default("General")
@@ -353,12 +440,16 @@ export const AddObservationSchema = z.object({
 });
 
 export const DeleteActivitySchema = z.object({
-  id: z.number().int().describe("ID numérico de la actividad a eliminar permanentemente."),
+  id: z
+    .union([z.number().int(), z.string()])
+    .describe("ID numérico (ej. 9758) o clave de la actividad (ej. 'CI095') a eliminar permanentemente."),
   dryRun: z.boolean().default(true).describe("Modo simulación de seguridad. En true, no elimina en la base de datos productiva."),
 });
 
 export const CloseActivitySchema = z.object({
-  id: z.number().int().describe("ID de la actividad que se concluye."),
+  id: z
+    .union([z.number().int(), z.string()])
+    .describe("ID numérico o clave de la actividad que se concluye (ej. 9758 o 'CI095')."),
   actualHours: z
     .number()
     .positive()
@@ -373,10 +464,9 @@ export const CloseActivitySchema = z.object({
 
 export const LogWorkHoursSchema = z.object({
   activityId: z
-    .number()
-    .int()
+    .union([z.number().int(), z.string()])
     .optional()
-    .describe("ID de la actividad asociada."),
+    .describe("ID o clave de la actividad asociada."),
   stageProgressId: z
     .number()
     .int()
@@ -403,19 +493,44 @@ export const LogWorkHoursSchema = z.object({
 });
 
 export const UploadEvidenceFileSchema = z.object({
-  activityId: z.number().int().describe("ID de la actividad receptora."),
+  activityId: z
+    .union([z.number().int(), z.string()])
+    .describe("ID numérico de la actividad (ej. 9758) o clave de actividad (ej. 'CI095')."),
+  fileName: z
+    .string()
+    .optional()
+    .describe("Nombre del archivo de evidencia (ej. 'CI095.md', 'evidencia.txt', 'captura.png')."),
+  content: z
+    .string()
+    .optional()
+    .describe("Contenido en texto plano o markdown del archivo a subir como evidencia. RECOMENDADO para asistentes IA / entornos en contenedor Podman."),
+  fileContent: z
+    .string()
+    .optional()
+    .describe("Alias de 'content'. Texto del archivo a subir."),
+  fileContentBase64: z
+    .string()
+    .optional()
+    .describe("Contenido codificado en Base64 para archivos binarios (imágenes, PDFs, zips)."),
   filePath: z
     .string()
-    .describe("Ruta absoluta en el disco local hacia el archivo a subir."),
+    .optional()
+    .describe("Ruta del archivo local (solo si el servidor corre localmente con acceso a esa ruta en disco)."),
   description: z
     .string()
     .optional()
-    .describe("Descripción breve de la evidencia."),
-  dryRun: z.boolean().default(true).describe("Modo simulación de seguridad."),
+    .describe("Descripción breve o justificación de la evidencia."),
+  mimeType: z
+    .string()
+    .optional()
+    .describe("Tipo MIME opcional (ej. 'text/markdown', 'image/png')."),
+  dryRun: z.boolean().default(true).describe("Modo simulación de seguridad. Especifique dryRun: false para subir realmente a la API."),
 });
 
 export const AttachEvidenceUrlSchema = z.object({
-  activityId: z.number().int().describe("ID de la actividad receptora."),
+  activityId: z
+    .union([z.number().int(), z.string()])
+    .describe("ID numérico de la actividad (ej. 9758) o clave de actividad (ej. 'CI095')."),
   url: z
     .string()
     .url()
@@ -499,19 +614,25 @@ export function getToolDefinitions() {
     {
       name: "track_get_my_activities",
       description:
-        "Consulta las actividades asignadas en el sistema a Brayan Ulises (responsibleId: 6). Operación 100% de LECTURA segura.",
+        "Consulta las actividades asignadas en el sistema a cualquier responsable o al usuario autenticado (responsibleId: 6). Operación 100% de LECTURA segura.",
       inputSchema: toJsonSchemaClean(GetMyActivitiesSchema),
+    },
+    {
+      name: "track_search_activities",
+      description:
+        "Buscador global de actividades en todo el sistema por clave (ej. 'G114', 'CI095'), descripción, proyecto o responsable. Útil cuando una actividad no pertenece al usuario autenticado o se desconoce el responsable. Operación 100% LECTURA.",
+      inputSchema: toJsonSchemaClean(SearchActivitiesSchema),
     },
     {
       name: "track_get_activity_detail",
       description:
-        "Obtiene el detalle completo de una actividad por su ID. Operación 100% de LECTURA.",
+        "Obtiene el detalle completo de una actividad por su ID numérico o clave alfanumérica (ej. 9758, 'CI095', 'G114'). Operación 100% de LECTURA.",
       inputSchema: toJsonSchemaClean(GetActivityDetailSchema),
     },
     {
       name: "track_get_metrics_and_balance",
       description:
-        "Calcula el balance de horas laboradas por Brayan vs. la capacidad institucional (semanal o mensual) en tiempo real.",
+        "Calcula el balance de horas laboradas por el responsable vs. la capacidad institucional (semanal o mensual) en tiempo real.",
       inputSchema: toJsonSchemaClean(GetMetricsAndBalanceSchema),
     },
     {
@@ -531,6 +652,12 @@ export function getToolDefinitions() {
       description:
         "Actualiza el estado, título, temas o acuerdos de una reunión existente. SEGURIDAD: Modo Dry-Run activo por defecto.",
       inputSchema: toJsonSchemaClean(UpdateMeetingSchema),
+    },
+    {
+      name: "track_delete_meeting",
+      description:
+        "Elimina una reunión agendada o registrada en el sistema por su ID numérico. SEGURIDAD: Modo Dry-Run activo por defecto.",
+      inputSchema: toJsonSchemaClean(DeleteMeetingSchema),
     },
     {
       name: "track_get_catalogs",
@@ -698,10 +825,27 @@ export async function handleToolCall(
         if (found) targetProjectId = found.id;
       }
 
+      let targetResponsibleId = parsed.responsibleId;
+      if (!targetResponsibleId && parsed.responsibleName) {
+        const liveResponsibles = await catalogService.getResponsibles();
+        const resolved = resolveResponsibleFromText(parsed.responsibleName, liveResponsibles);
+        targetResponsibleId = resolved.id;
+      }
+
       return await activityService.getMyActivities(
-        parsed.responsibleId,
+        targetResponsibleId,
         parsed.status,
         targetProjectId,
+      );
+    }
+
+    case "track_search_activities": {
+      const parsed = SearchActivitiesSchema.parse(args || {});
+      return await activityService.searchActivities(
+        parsed.query,
+        parsed.responsibleName,
+        parsed.status,
+        parsed.limit,
       );
     }
 
@@ -764,6 +908,11 @@ export async function handleToolCall(
         },
         parsed.dryRun,
       );
+    }
+
+    case "track_delete_meeting": {
+      const parsed = DeleteMeetingSchema.parse(args || {});
+      return await meetingService.deleteMeeting(parsed.id, parsed.dryRun);
     }
 
     case "track_get_catalogs": {
@@ -889,21 +1038,75 @@ export async function handleToolCall(
 
     case "track_update_activity": {
       const parsed = UpdateActivitySchema.parse(args || {});
-      return await activityService.updateActivity(
+      const liveProjects = await catalogService.getProjects();
+      const liveResponsibles = await catalogService.getResponsibles();
+
+      let targetProjectId = parsed.projectId;
+      if (!targetProjectId && parsed.projectName) {
+        const found = liveProjects.find(
+          (p) =>
+            p.name?.toLowerCase().includes(parsed.projectName!.toLowerCase()) ||
+            p.prefix?.toLowerCase() === parsed.projectName!.toLowerCase()
+        );
+        if (found) targetProjectId = found.id;
+      }
+
+      let targetResponsibleId = parsed.responsibleId;
+      if (!targetResponsibleId && parsed.responsibleName) {
+        const resolvedResp = resolveResponsibleFromText(parsed.responsibleName, liveResponsibles);
+        targetResponsibleId = resolvedResp.id;
+      }
+
+      const isCompleted = parsed.status === "Completed" || parsed.autoComplete;
+      const nowIso = new Date().toISOString();
+
+      const updateData: any = {
+        description: parsed.description,
+        status: isCompleted ? "Completed" : parsed.status,
+        progressPercentage: isCompleted ? 100 : parsed.progressPercentage,
+        responsibleId: targetResponsibleId,
+        projectId: targetProjectId,
+        serviceId: parsed.serviceId,
+        type: parsed.type,
+        priority: parsed.priority,
+        estimatedHours: parsed.estimatedHours,
+        actualStartDate: parsed.actualStartDate || (isCompleted ? nowIso : undefined),
+        estimatedStartDate: parsed.estimatedStartDate,
+        estimatedDeliveryDate: parsed.estimatedDeliveryDate,
+        actualCompletionDate: parsed.actualCompletionDate || (isCompleted ? nowIso : undefined),
+        productId: parsed.productId,
+        productApplicable: parsed.productApplicable,
+        notes: parsed.notes,
+        support: parsed.support,
+      };
+
+      Object.keys(updateData).forEach((key) => {
+        if (updateData[key] === undefined) delete updateData[key];
+      });
+
+      const updateResult = await activityService.updateActivity(
         parsed.id,
-        {
-          status: parsed.status,
-          progressPercentage: parsed.progressPercentage,
-          estimatedStartDate: parsed.estimatedStartDate,
-          actualStartDate: parsed.actualStartDate,
-          estimatedDeliveryDate: parsed.estimatedDeliveryDate,
-          actualCompletionDate: parsed.actualCompletionDate,
-          productId: parsed.productId,
-          productApplicable: parsed.productApplicable,
-          notes: parsed.notes,
-        },
+        updateData,
         parsed.dryRun,
       );
+
+      if (parsed.autoAdvanceStages && updateResult) {
+        const numericId = await activityService.resolveNumericActivityId(parsed.id);
+        const stageAdvanceResult = await activityService.advanceAllProcessStages(
+          numericId,
+          targetResponsibleId || env.DEFAULT_RESPONSIBLE_ID,
+          "Avance automático de etapas al actualizar actividad",
+          parsed.dryRun,
+          parsed.productId
+        );
+        return {
+          ...updateResult,
+          stageAdvancement: stageAdvanceResult,
+          message: `${updateResult.message || ''} Etapas de proceso avanzadas automáticamente.`,
+        };
+      }
+
+      return updateResult;
     }
 
     case "track_get_process_stages": {
@@ -912,16 +1115,18 @@ export async function handleToolCall(
         return await activityService.getProcessStagesByProduct(parsed.productId);
       }
       if (parsed.activityId) {
-        return await activityService.getProcessStageHistory(parsed.activityId);
+        const numericId = await activityService.resolveNumericActivityId(parsed.activityId);
+        return await activityService.getProcessStageHistory(numericId);
       }
       throw new Error("Debe proporcionar productId o activityId para consultar las etapas.");
     }
 
     case "track_advance_process_stage": {
       const parsed = AdvanceProcessStageSchema.parse(args || {});
+      const numericId = await activityService.resolveNumericActivityId(parsed.activityId);
       if (parsed.advanceAll) {
         return await activityService.advanceAllProcessStages(
-          parsed.activityId,
+          numericId,
           parsed.assignedToId,
           parsed.notes,
           parsed.dryRun,
@@ -931,7 +1136,7 @@ export async function handleToolCall(
         throw new Error("Debe especificar stageId o pasar advanceAll: true para avanzar automáticamente todas las etapas.");
       }
       return await activityService.advanceProcessStage(
-        parsed.activityId,
+        numericId,
         parsed.stageId,
         parsed.assignedToId,
         parsed.notes,
@@ -941,13 +1146,15 @@ export async function handleToolCall(
 
     case "track_get_observations": {
       const parsed = GetObservationsSchema.parse(args || {});
-      return await activityService.getObservations(parsed.activityId);
+      const numericId = await activityService.resolveNumericActivityId(parsed.activityId);
+      return await activityService.getObservations(numericId);
     }
 
     case "track_add_observation": {
       const parsed = AddObservationSchema.parse(args || {});
+      const numericId = await activityService.resolveNumericActivityId(parsed.activityId);
       return await activityService.addObservation(
-        parsed.activityId,
+        numericId,
         parsed.type,
         parsed.content,
         parsed.collaboratorId,
@@ -972,9 +1179,10 @@ export async function handleToolCall(
 
     case "track_log_work_hours": {
       const parsed = LogWorkHoursSchema.parse(args || {});
+      const numericId = parsed.activityId ? await activityService.resolveNumericActivityId(parsed.activityId) : undefined;
       return await timesheetService.logWorkHours(
         {
-          activityId: parsed.activityId,
+          activityId: numericId,
           stageProgressId: parsed.stageProgressId,
           hoursWorked: parsed.hoursWorked,
           workDate: parsed.workDate,
@@ -989,7 +1197,15 @@ export async function handleToolCall(
       const parsed = UploadEvidenceFileSchema.parse(args || {});
       return await evidenceService.uploadEvidenceFile(
         parsed.activityId,
-        parsed.filePath,
+        {
+          filePath: parsed.filePath,
+          fileName: parsed.fileName,
+          content: parsed.content,
+          fileContent: parsed.fileContent,
+          fileContentBase64: parsed.fileContentBase64,
+          description: parsed.description,
+          mimeType: parsed.mimeType,
+        },
         parsed.description,
         parsed.dryRun,
       );

@@ -108,7 +108,38 @@ export class MeetingService {
     const response = await apiClient.put(`/api/v1/Meetings/${id}`, data);
     return response.data;
   }
+
+  /**
+   * Elimina una reunión agendada o registrada en el sistema.
+   * SEGURIDAD EN PRODUCCIÓN: Interceptado en modo dry-run.
+   */
+  public async deleteMeeting(id: number, dryRun = true): Promise<any> {
+    const isDryRun = dryRun !== undefined ? dryRun : env.DRY_RUN_MODE;
+
+    if (isDryRun) {
+      logger.warn(`[DRY-RUN INTERCEPTOR] Simulación de eliminación de reunión ${id}.`);
+      return {
+        dryRun: true,
+        status: 'SIMULATION_SUCCESS',
+        targetEndpoint: `DELETE /api/v1/Meetings/${id}`,
+        meetingId: id,
+        message: `Validación de eliminación de reunión ${id} exitosa. No se registraron cambios en producción (Modo Dry-Run).`,
+      };
+    }
+
+    await authManager.getValidToken();
+    logger.info(`[PRODUCCIÓN REAL] Ejecutando DELETE /api/v1/Meetings/${id}...`);
+    const response = await apiClient.delete(`/api/v1/Meetings/${id}`);
+    return {
+      deleted: true,
+      meetingId: id,
+      targetEndpoint: `DELETE /api/v1/Meetings/${id}`,
+      data: response.data,
+      message: `Reunión ${id} eliminada permanentemente del sistema.`,
+    };
+  }
 }
 
 export const meetingService = new MeetingService();
+
 
