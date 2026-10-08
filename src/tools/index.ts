@@ -674,7 +674,7 @@ export function getToolDefinitions() {
     {
       name: "track_advance_process_stage",
       description:
-        "Avanza una actividad a una nueva etapa del proceso de producto. SEGURIDAD: Modo Dry-Run activo por defecto.",
+        "Avanza una actividad a una nueva etapa del proceso de producto, registrando responsable (assignedToId) y notas en esa etapa. Con advanceAll:true recorre secuencialmente todas las etapas pendientes. ADVERTENCIA: en modo dry-run con advanceAll:true, si no se pasa productId explícito, siempre reporta '0 etapas avanzadas' aunque en modo real sí existan etapas pendientes — no es un indicador confiable en ese caso. El resultado real de cada avance trae el stageProgressId necesario para track_log_work_hours. SEGURIDAD: Modo Dry-Run activo por defecto.",
       inputSchema: toJsonSchemaClean(AdvanceProcessStageSchema),
     },
     {
@@ -692,19 +692,19 @@ export function getToolDefinitions() {
     {
       name: "track_create_activity",
       description:
-        "Registra una nueva actividad. Si no se indican projectId o serviceId, los resuelve DINÁMICAMENTE de la lista en tiempo real de la API. SEGURIDAD: Modo Dry-Run activo por defecto.",
+        "Registra una nueva actividad. Si no se indican projectId o serviceId, los resuelve DINÁMICAMENTE de la lista en tiempo real de la API. ADVERTENCIA: si se omiten responsibleId Y responsibleName, la actividad se asigna por defecto a responsibleId=6 (no al usuario autenticado) — pasa siempre responsibleId explícito. Para 'Diseño' usa el valor 'Desing' (typo oficial del backend), no 'Design'. Si pasas productId, verifica que su serviceId coincida o la API rechazará la creación. SEGURIDAD: Modo Dry-Run activo por defecto.",
       inputSchema: toJsonSchemaClean(CreateActivitySchema),
     },
     {
       name: "track_update_activity",
       description:
-        "Actualiza el progreso, estado o notas de una actividad. SEGURIDAD: Modo Dry-Run activo por defecto.",
+        "Actualiza el progreso, estado, fechas, producto o notas de una actividad. Solo los campos enviados se modifican (el resto se preserva fusionando con el valor existente). Cambiar 'type' no está garantizado en todas las instalaciones de este conector: valida en el resultado que el campo cambió antes de asumirlo. Si vas a cerrar una actividad con producto de flujo por etapas, usa autoAdvanceStages:true o avanza las etapas antes con track_advance_process_stage — este update por sí solo no registra responsables de etapa. SEGURIDAD: Modo Dry-Run activo por defecto.",
       inputSchema: toJsonSchemaClean(UpdateActivitySchema),
     },
     {
       name: "track_close_activity",
       description:
-        "Concluye y cierra una actividad marcándola al 100% y estado Completed. SEGURIDAD: Modo Dry-Run activo por defecto.",
+        "Concluye y cierra una actividad marcándola al 100% y estado Completed. IMPORTANTE: esta tool NO avanza las etapas del proceso del producto ni registra responsables/tiempo por etapa. Si la actividad tiene productApplicable:true con flujo de etapas configurado, avanza primero cada etapa con track_advance_process_stage (idealmente advanceAll:true) asignando responsable, y registra las horas con track_log_work_hours usando el stageProgressId resultante, antes o en vez de llamar a esta tool. SEGURIDAD: Modo Dry-Run activo por defecto.",
       inputSchema: toJsonSchemaClean(CloseActivitySchema),
     },
     {
@@ -716,7 +716,7 @@ export function getToolDefinitions() {
     {
       name: "track_log_work_hours",
       description:
-        "Registra horas trabajadas en una fecha sobre una actividad. SEGURIDAD: Modo Dry-Run activo por defecto.",
+        "Registra horas trabajadas en una fecha sobre una actividad. ADVERTENCIA: en modo real (dryRun:false), stageProgressId es OBLIGATORIO cuando la actividad usa flujo de etapas por producto — el dry-run no lo valida y puede dar SIMULATION_SUCCESS aunque el real falle por falta de stageProgressId. Obtén ese id del resultado de track_advance_process_stage (campo 'id') antes de registrar horas reales sobre una actividad con producto. SEGURIDAD: Modo Dry-Run activo por defecto.",
       inputSchema: toJsonSchemaClean(LogWorkHoursSchema),
     },
     {

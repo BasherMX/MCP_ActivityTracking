@@ -19,6 +19,29 @@ import {
 } from './services/session-context.js';
 import { authManager } from './services/auth-manager.js';
 
+const AGENT_INSTRUCTIONS = `INSTRUCCIONES OPERATIVAS PARA ASISTENTES DE IA — Activity Tracking MCP (DCMTIC)
+
+Seguridad: toda operación de escritura (create/update/delete/advance/log/attach) tiene dryRun=true por defecto. Ejecuta primero en dry-run, valida el resultado, y solo entonces repite con dryRun:false.
+
+1) CIERRE DE ACTIVIDADES CON PRODUCTO (productApplicable:true):
+   track_close_activity por sí sola SOLO marca status=Completed y progressPercentage=100 — NO avanza las etapas del proceso del producto. Si la actividad tiene un producto con flujo de etapas, el cierre correcto es:
+     a) track_advance_process_stage con advanceAll:true (o etapa por etapa con stageId), asignando assignedToId en cada una, para dejar responsable y fecha registrados en cada etapa.
+     b) track_log_work_hours sobre el stageProgressId que devuelve cada avance de etapa (en modo real, stageProgressId es obligatorio para actividades con flujo por etapas: un dry-run exitoso de track_log_work_hours NO garantiza que el real funcione sin él).
+     c) Solo entonces track_update_activity o track_close_activity con status:Completed, progressPercentage:100.
+   Alternativa: track_update_activity con autoAdvanceStages:true ejecuta (a) automáticamente antes de guardar; aun así registra las horas por separado con track_log_work_hours usando el stageProgressId resultante.
+
+2) track_advance_process_stage con advanceAll:true: en dry-run, solo consulta las etapas configuradas del producto si se le pasa productId explícito; si se omite, el dry-run siempre responde "0 etapas avanzadas" aunque en modo real sí existan etapas pendientes. No interpretes un dry-run de "0 etapas" como garantía de que no hay nada que avanzar — pasa productId o verifica antes con track_get_process_stages({ productId }).
+
+3) track_create_activity: si se omiten responsibleId y responsibleName, la actividad se asigna por defecto a responsibleId=6 (DEFAULT_RESPONSIBLE_ID). Para registrar actividades de otra persona, pasa siempre responsibleId explícito.
+
+4) Catálogo de tipos: el valor correcto para "Diseño" es el literal "Desing" (typo oficial del backend — ver FALLBACK_ACTIVITY_TYPES en src/config/constants.ts), no "Design".
+
+5) Si se pasa un productId que pertenece a un servicio distinto al que se resuelve dinámicamente por tipo/proyecto, la API rechaza con "El producto X pertenece al servicio Y, no al servicio Z". Pasa serviceId explícito coincidente con el producto.
+
+6) Cambiar el "type" de una actividad ya creada no está garantizado en todas las instalaciones de este conector — pruébalo primero en dry-run y confirma en el resultado que el campo type cambió. Si no cambia, la única alternativa es eliminar y recrear la actividad, lo cual puede desvincular horas de apoyo/colaboradores registradas contra el id original: pide confirmación explícita antes de borrar.
+
+Ver docs/AI_AGENT_NOTES.md para el detalle completo, ejemplos y el contexto de cada regla.`;
+
 /**
  * Fábrica de instancias de MCP Server.
  * En el SDK MCP oficial, cada transporte conectado requiere su propia instancia de Protocol/Server.
@@ -33,6 +56,7 @@ export function createMcpServer(session?: UserSession): Server {
       capabilities: {
         tools: {},
       },
+      instructions: AGENT_INSTRUCTIONS,
     }
   );
 
