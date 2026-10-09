@@ -1,0 +1,54 @@
+name: Build and publish MCPB
+
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    env:
+      MCPB_VERSION: 1.0.0+build.${{ github.run_number }}
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build and package MCPB
+        run: npm run package:mcpb
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: activity-tracking-mcpb-${{ github.sha }}
+          path: activity-tracking.mcpb
+          if-no-files-found: error
+
+      - name: Publish latest Claude Desktop package
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: mcpb-latest
+          name: Activity Tracking MCPB (latest)
+          prerelease: true
+          make_latest: false
+          generate_release_notes: false
+          overwrite_files: true
+          body: |
+            Automatically generated from commit ${{ github.sha }} on master.
+
+            Download `activity-tracking.mcpb` and install it in Claude Desktop.
+          files: activity-tracking.mcpb

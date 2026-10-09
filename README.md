@@ -108,3 +108,27 @@ npm run test:sse
 
 * **VS Code (Cline, Roo Code y GitHub Copilot):** Consulta [VSCODE_SETUP.md](./VSCODE_SETUP.md).
 * **Claude Desktop:** Consulta [docs/CLAUDE_DESKTOP_SETUP.md](./docs/CLAUDE_DESKTOP_SETUP.md).
+
+## Publicacion automatica del paquete MCPB
+
+El workflow `.github/workflows/publish-mcpb.yml` se ejecuta en cada push a `master`.
+Compila el servidor, genera el manifiesto con las herramientas actuales y publica
+un paquete `activity-tracking.mcpb` en el Release `mcpb-latest`.
+
+El paquete se puede descargar desde:
+
+```text
+https://github.com/ORGANIZACION/REPOSITORIO/releases/download/mcpb-latest/activity-tracking.mcpb
+```
+
+Descarga ese archivo y arrastralo a Claude Desktop en Settings > Extensions.
+El workflow requiere que GitHub Actions tenga permiso `Read and write permissions`
+para contenidos del repositorio. Tambien se puede ejecutar manualmente desde
+Actions > Build and publish MCPB.
+
+Para generar el paquete localmente:
+
+```bash
+npm ci
+npm run package:mcpb
+```
