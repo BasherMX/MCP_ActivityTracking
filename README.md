@@ -115,14 +115,16 @@ npm run test:sse
 
 ## Publicacion automatica del paquete MCPB
 
-El workflow `.github/workflows/publish-mcpb.yml` se ejecuta en cada push a `master`.
+El workflow `.github/workflows/publish-mcpb.yml` se ejecuta en cada push a `main` o `master`.
 Compila el servidor, genera el manifiesto con las herramientas actuales y publica
 un paquete `activity-tracking.mcpb` en el Release `mcpb-latest`.
+
+El repositorio está disponible en [github.com/BasherMX/MCP_ActivityTracking](https://github.com/BasherMX/MCP_ActivityTracking).
 
 El paquete se puede descargar desde:
 
 ```text
-https://github.com/ORGANIZACION/REPOSITORIO/releases/download/mcpb-latest/activity-tracking.mcpb
+https://github.com/BasherMX/MCP_ActivityTracking/releases/download/mcpb-latest/activity-tracking.mcpb
 ```
 
 Descarga ese archivo y arrastralo a Claude Desktop en Settings > Extensions.
