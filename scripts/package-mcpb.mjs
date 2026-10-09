@@ -1,10 +1,19 @@
-import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { execFileSync } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const packageJson = JSON.parse(readFileSync(join(projectRoot, "package.json"), "utf8"));
+const packageJson = JSON.parse(
+  readFileSync(join(projectRoot, "package.json"), "utf8"),
+);
 const buildDirectory = join(projectRoot, ".mcpb-build");
 const outputFile = join(projectRoot, "activity-tracking.mcpb");
 const version = process.env.MCPB_VERSION || packageJson.version;
@@ -16,18 +25,26 @@ mkdirSync(buildDirectory, { recursive: true });
 const distDirectory = join(projectRoot, "dist");
 const nodeModulesDirectory = join(projectRoot, "node_modules");
 if (!existsSync(distDirectory) || !existsSync(nodeModulesDirectory)) {
-  throw new Error("dist/ y node_modules/ deben existir. Ejecuta npm ci y npm run build primero.");
+  throw new Error(
+    "dist/ y node_modules/ deben existir. Ejecuta npm ci y npm run build primero.",
+  );
 }
 
 cpSync(distDirectory, join(buildDirectory, "dist"), { recursive: true });
-cpSync(nodeModulesDirectory, join(buildDirectory, "node_modules"), { recursive: true });
+cpSync(nodeModulesDirectory, join(buildDirectory, "node_modules"), {
+  recursive: true,
+});
 writeFileSync(
   join(buildDirectory, "package.json"),
   `${JSON.stringify({ name: packageJson.name, version, type: packageJson.type }, null, 2)}\n`,
 );
 
-const toolsModule = await import(pathToFileURL(join(distDirectory, "tools", "index.js")).href);
-const tools = toolsModule.getToolDefinitions().map(({ name, description }) => ({ name, description }));
+const toolsModule = await import(
+  pathToFileURL(join(distDirectory, "tools", "index.js")).href
+);
+const tools = toolsModule
+  .getToolDefinitions()
+  .map(({ name, description }) => ({ name, description }));
 
 const manifest = {
   manifest_version: "0.2",
@@ -74,7 +91,8 @@ const manifest = {
     dry_run_mode: {
       type: "boolean",
       title: "Dry-Run Mode",
-      description: "Simulate write operations without changing production data.",
+      description:
+        "Simulate write operations without changing production data.",
       required: false,
       default: false,
     },
@@ -83,15 +101,43 @@ const manifest = {
   license: packageJson.license || "ISC",
 };
 
-writeFileSync(join(buildDirectory, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
+writeFileSync(
+  join(buildDirectory, "manifest.json"),
+  `${JSON.stringify(manifest, null, 2)}\n`,
+);
 
 if (process.platform === "win32") {
-  execFileSync("tar", ["-a", "-cf", outputFile, "-C", buildDirectory, "manifest.json", "package.json", "dist", "node_modules"], { stdio: "inherit" });
+  execFileSync(
+    "tar",
+    [
+      "-a",
+      "-cf",
+      outputFile,
+      "-C",
+      buildDirectory,
+      "manifest.json",
+      "package.json",
+      "dist",
+      "node_modules",
+    ],
+    { stdio: "inherit" },
+  );
 } else {
-  execFileSync("zip", ["-qr", outputFile, "manifest.json", "package.json", "dist", "node_modules"], {
-    cwd: buildDirectory,
-    stdio: "inherit",
-  });
+  execFileSync(
+    "zip",
+    [
+      "-qr",
+      outputFile,
+      "manifest.json",
+      "package.json",
+      "dist",
+      "node_modules",
+    ],
+    {
+      cwd: buildDirectory,
+      stdio: "inherit",
+    },
+  );
 }
 
 rmSync(buildDirectory, { recursive: true, force: true });

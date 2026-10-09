@@ -52,11 +52,13 @@ graph TD
 ## 🐳 Comandos de Podman (Construcción y Despliegue)
 
 ### 1. Construir la imagen:
+
 ```bash
 podman build -t mcp-activity-tracking:latest .
 ```
 
 ### 2. Ejecutar el contenedor:
+
 ```bash
 podman run -d \
   --name mcp-activity-tracking-server \
@@ -67,11 +69,13 @@ podman run -d \
 ```
 
 ### 3. Verificar salud del servicio:
+
 ```bash
 curl http://localhost:3333/health
 ```
 
 Respuesta esperada:
+
 ```json
 {
   "status": "ok",
@@ -106,8 +110,8 @@ npm run test:sse
 
 ## 📋 Guías de Configuración por Cliente
 
-* **VS Code (Cline, Roo Code y GitHub Copilot):** Consulta [VSCODE_SETUP.md](./VSCODE_SETUP.md).
-* **Claude Desktop:** Consulta [docs/CLAUDE_DESKTOP_SETUP.md](./docs/CLAUDE_DESKTOP_SETUP.md).
+- **VS Code (Cline, Roo Code y GitHub Copilot):** Consulta [VSCODE_SETUP.md](./VSCODE_SETUP.md).
+- **Claude Desktop:** Consulta [docs/CLAUDE_DESKTOP_SETUP.md](./docs/CLAUDE_DESKTOP_SETUP.md).
 
 ## Publicacion automatica del paquete MCPB
 
