@@ -1,6 +1,6 @@
 # Servidor MCP: Activity Tracking API (Node.js, TypeScript & Podman)
 
-Servidor oficial compatible con el **Model Context Protocol (MCP)** para integrar asistentes de inteligencia artificial en VS Code (Cline, Roo Code, GitHub Copilot) con el sistema institucional **Activity Tracking API** (`http://10.200.1.13:5100`).
+Servidor oficial compatible con el **Model Context Protocol (MCP)** para integrar asistentes de inteligencia artificial en VS Code (GitHub Copilot) y Claude Desktop con el sistema institucional **Activity Tracking API** (`http://10.200.1.13:5100`).
 
 Soporta despliegue **Centralizado en Contenedor Podman (Transporte HTTP/SSE Multi-Usuario)** y ejecución local por **Stdio**.
 
@@ -10,9 +10,9 @@ Soporta despliegue **Centralizado en Contenedor Podman (Transporte HTTP/SSE Mult
 
 ```mermaid
 graph TD
-    subgraph "Estaciones de Trabajo (VS Code)"
-        UserA["Desarrollador 1<br/>Cline / Roo Code<br/>Header: adrian.garcia"]
-        UserB["Desarrollador 2<br/>Cline / Roo Code<br/>Header: brayan.vazquez"]
+    subgraph "Estaciones de Trabajo (VS Code / Claude Desktop)"
+        UserA["Desarrollador 1<br/>VS Code Copilot<br/>Header: adrian.garcia"]
+        UserB["Desarrollador 2<br/>Claude Desktop (.mcpb)<br/>Header: brayan.vazquez"]
         UserN["Desarrollador N...<br/>Copilot / Claude<br/>Header: usuario.n"]
     end
 
@@ -108,10 +108,9 @@ npm run test:sse
 
 ---
 
-## 📋 Guías de Configuración por Cliente
+## 📋 Guía de Instalación
 
-- **VS Code (Cline, Roo Code y GitHub Copilot):** Consulta [VSCODE_SETUP.md](./VSCODE_SETUP.md).
-- **Claude Desktop:** Consulta [docs/CLAUDE_DESKTOP_SETUP.md](./docs/CLAUDE_DESKTOP_SETUP.md).
+- Consulta la guía detallada de configuración en [INSTALACION.md](./INSTALACION.md) para **VS Code** y **Claude Desktop** (mediante `.mcpb`).
 
 ## Publicacion automatica del paquete MCPB
 
