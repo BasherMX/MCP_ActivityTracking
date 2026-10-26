@@ -16,7 +16,12 @@ const packageJson = JSON.parse(
 );
 const buildDirectory = join(projectRoot, ".mcpb-build");
 const outputFile = join(projectRoot, "activity-tracking.mcpb");
-const version = process.env.MCPB_VERSION || packageJson.version;
+const baseVersion = packageJson.version || "1.0.0";
+const version =
+  process.env.MCPB_VERSION ||
+  (process.env.GITHUB_RUN_NUMBER
+    ? `${baseVersion}+build.${process.env.GITHUB_RUN_NUMBER}`
+    : baseVersion);
 
 rmSync(buildDirectory, { recursive: true, force: true });
 rmSync(outputFile, { force: true });
@@ -52,7 +57,7 @@ const manifest = {
   display_name: "Activity Tracking MCP",
   version,
   description: "MCP extension for the institutional Activity Tracking API.",
-  author: { name: "DCMTIC" },
+  author: { name: "Brayan Ulises Vázquez Heredia" },
   server: {
     type: "node",
     entry_point: "dist/index.js",

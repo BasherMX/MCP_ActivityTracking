@@ -13,8 +13,6 @@ permissions:
 jobs:
   package:
     runs-on: ubuntu-latest
-    env:
-      MCPB_VERSION: 1.0.0+build.${{ github.run_number }}
 
     steps:
       - name: Checkout source
