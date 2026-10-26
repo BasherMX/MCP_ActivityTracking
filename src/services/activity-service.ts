@@ -505,11 +505,12 @@ export class ActivityService {
   public async advanceProcessStage(
     activityId: number,
     stageId: number,
-    assignedToId = env.DEFAULT_RESPONSIBLE_ID,
+    assignedToId?: number,
     notes?: string,
     dryRun = true,
   ): Promise<any> {
     const isDryRun = dryRun !== undefined ? dryRun : env.DRY_RUN_MODE;
+    const effectiveAssignedToId = assignedToId || authManager.getResponsibleId();
 
     if (isDryRun) {
       logger.warn(
@@ -521,7 +522,7 @@ export class ActivityService {
         targetEndpoint: `POST /api/v1/process-stages/activity/${activityId}/advance`,
         activityId,
         stageId,
-        assignedToId,
+        assignedToId: effectiveAssignedToId,
         notes,
         message: `Simulación exitosa: Avance a etapa ${stageId} preparado. No se modificó la base de datos (Modo Dry-Run).`,
       };
@@ -535,7 +536,7 @@ export class ActivityService {
       `/api/v1/process-stages/activity/${activityId}/advance`,
       {
         stageId,
-        assignedToId,
+        assignedToId: effectiveAssignedToId,
         notes,
       },
     );
@@ -547,12 +548,14 @@ export class ActivityService {
    */
   public async advanceAllProcessStages(
     activityId: number,
-    assignedToId = env.DEFAULT_RESPONSIBLE_ID,
+    assignedToId?: number,
     notes?: string,
     dryRun = true,
     productId?: number,
   ): Promise<any> {
     const isDryRun = dryRun !== undefined ? dryRun : env.DRY_RUN_MODE;
+    const effectiveAssignedToId = assignedToId || authManager.getResponsibleId();
+
     logger.info(
       `Avanzando automáticamente todas las etapas para la actividad ${activityId}...`,
     );
@@ -561,9 +564,10 @@ export class ActivityService {
     try {
       if (productId) {
         stages = await this.getProcessStagesByProduct(productId);
-      } else if (!isDryRun) {
+      } else {
+        // En simulación o producción real, intentar resolver productId desde el detalle si no se dio explícito
         const detail = await this.getActivityDetail(activityId);
-        if (detail.productId) {
+        if (detail && detail.productId) {
           stages = await this.getProcessStagesByProduct(detail.productId);
         }
       }
@@ -587,8 +591,8 @@ export class ActivityService {
         const res = await this.advanceProcessStage(
           activityId,
           sId,
-          assignedToId,
-          notes || `Avance automático a etapa ${stage.name || sId}`,
+          effectiveAssignedToId,
+          notes || `Avance a etapa: ${stage.name || sId}`,
           dryRun,
         );
         results.push({ stageId: sId, stageName: stage.name, result: res });
@@ -632,10 +636,13 @@ export class ActivityService {
     activityId: number,
     type: string,
     content: string,
-    collaboratorId = env.DEFAULT_RESPONSIBLE_ID,
+    collaboratorId?: number,
     dryRun = true,
+    createdBy?: string,
   ): Promise<any> {
     const isDryRun = dryRun !== undefined ? dryRun : env.DRY_RUN_MODE;
+    const effectiveCollaboratorId = collaboratorId || authManager.getResponsibleId();
+    const effectiveCreatedBy = createdBy || authManager.getResponsibleName() || 'Usuario Institucional';
 
     if (isDryRun) {
       logger.warn(
@@ -648,14 +655,15 @@ export class ActivityService {
         activityId,
         type,
         content,
-        collaboratorId,
-        message: `Simulación exitosa: Observación tipo '${type}' preparada. No se modificó la base de datos (Modo Dry-Run).`,
+        collaboratorId: effectiveCollaboratorId,
+        createdBy: effectiveCreatedBy,
+        message: `Simulación exitosa: Observación tipo '${type}' preparada con autor '${effectiveCreatedBy}'. No se modificó la base de datos (Modo Dry-Run).`,
       };
     }
 
     await authManager.getValidToken();
     logger.info(
-      `[PRODUCCIÓN REAL] Agregando observación tipo '${type}' a actividad ${activityId}...`,
+      `[PRODUCCIÓN REAL] Agregando observación tipo '${type}' a actividad ${activityId} (autor: ${effectiveCreatedBy})...`,
     );
     const response = await apiClient.post(
       `/api/v1/activities/${activityId}/Observations`,
@@ -663,10 +671,83 @@ export class ActivityService {
         activityId,
         type,
         content,
-        collaboratorId,
+        collaboratorId: effectiveCollaboratorId,
+        createdBy: effectiveCreatedBy,
       },
     );
     return response.data;
+  }
+
+  /**
+   * Asocia un colaborador formal a una etapa de proceso específica de una actividad.
+   */
+  public async addStageCollaborator(
+    progressId: number,
+    responsibleId?: number,
+    dryRun = true,
+  ): Promise<any> {
+    const isDryRun = dryRun !== undefined ? dryRun : env.DRY_RUN_MODE;
+    const effectiveResponsibleId = responsibleId || authManager.getResponsibleId();
+
+    if (isDryRun) {
+      logger.warn(
+        `[DRY-RUN INTERCEPTOR] Simulación de adición de colaborador ${effectiveResponsibleId} a etapa ${progressId}.`,
+      );
+      return {
+        dryRun: true,
+        status: "SIMULATION_SUCCESS",
+        targetEndpoint: `POST /api/v1/process-stages/progress/${progressId}/collaborators`,
+        progressId,
+        responsibleId: effectiveResponsibleId,
+        message: `Simulación exitosa: Colaborador ${effectiveResponsibleId} asignado a etapa ${progressId}. Base de datos intacta.`,
+      };
+    }
+
+    await authManager.getValidToken();
+    logger.info(
+      `[PRODUCCIÓN REAL] Agregando colaborador ${effectiveResponsibleId} a etapa progressId ${progressId}...`,
+    );
+    const response = await apiClient.post(
+      `/api/v1/process-stages/progress/${progressId}/collaborators`,
+      {
+        responsibleId: effectiveResponsibleId,
+      },
+    );
+    return response.data;
+  }
+
+  /**
+   * Remueve a un colaborador formal de una etapa de proceso.
+   */
+  public async removeStageCollaborator(
+    progressId: number,
+    collaboratorId: number,
+    dryRun = true,
+  ): Promise<any> {
+    const isDryRun = dryRun !== undefined ? dryRun : env.DRY_RUN_MODE;
+
+    if (isDryRun) {
+      logger.warn(
+        `[DRY-RUN INTERCEPTOR] Simulación de remoción de colaborador ${collaboratorId} de etapa ${progressId}.`,
+      );
+      return {
+        dryRun: true,
+        status: "SIMULATION_SUCCESS",
+        targetEndpoint: `DELETE /api/v1/process-stages/progress/${progressId}/collaborators/${collaboratorId}`,
+        progressId,
+        collaboratorId,
+        message: `Simulación exitosa: Colaborador ${collaboratorId} removido de etapa ${progressId}. Base de datos intacta.`,
+      };
+    }
+
+    await authManager.getValidToken();
+    logger.info(
+      `[PRODUCCIÓN REAL] Removiendo colaborador ${collaboratorId} de etapa progressId ${progressId}...`,
+    );
+    const response = await apiClient.delete(
+      `/api/v1/process-stages/progress/${progressId}/collaborators/${collaboratorId}`,
+    );
+    return response.data || { success: true, message: `Colaborador ${collaboratorId} removido de etapa ${progressId}.` };
   }
 
   /**

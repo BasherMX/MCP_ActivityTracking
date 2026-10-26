@@ -7,6 +7,8 @@ import { meetingService } from "../services/meeting-service.js";
 import { catalogService } from "../services/catalog-service.js";
 import { evidenceService } from "../services/evidence-service.js";
 import { incidenceService } from "../services/incidence-service.js";
+import { appIssueService } from "../services/app-issue-service.js";
+import { reportService } from "../services/report-service.js";
 import { authManager } from "../services/auth-manager.js";
 import { inferActivityMetadata, formatStandardizedTitle, resolveResponsibleFromText, cleanEmailOrTicketText } from "../utils/nlp-resolver.js";
 import { env } from "../config/env.js";
@@ -275,6 +277,8 @@ export const CreateActivitySchema = z.object({
     .describe(
       "ID de producto o entregable. Obligatorio para registrar la actividad en producción y habilitar el seguimiento por etapas.",
     ),
+  estimatedStartDate: z.string().optional().describe("Fecha estimada de inicio en formato ISO o YYYY-MM-DD."),
+  estimatedDeliveryDate: z.string().optional().describe("Fecha estimada de entrega en formato ISO o YYYY-MM-DD."),
   notes: z.string().optional().describe("Notas o acuerdos adicionales."),
   support: z.string().optional().describe("Ticket o referencia de soporte."),
   dryRun: z
@@ -406,13 +410,13 @@ export const AdvanceProcessStageSchema = z.object({
   assignedToId: z
     .number()
     .int()
-    .default(env.DEFAULT_RESPONSIBLE_ID)
-    .describe("ID del responsable asignado a la etapa (6 = Brayan)."),
+    .optional()
+    .describe("ID del responsable asignado a la etapa (omita para usar el usuario autenticado de la sesión activa)."),
   advanceAll: z
     .boolean()
     .default(false)
     .describe("Si es true, avanza secuencialmente TODAS las etapas pendientes de la actividad hasta completarla en una sola llamada."),
-  notes: z.string().optional().describe("Notas o comentarios de avance de etapa."),
+  notes: z.string().optional().describe("Notas o comentarios de avance de etapa redactados técnicamente."),
   dryRun: z.boolean().default(true).describe("Modo simulación de seguridad. Especifique dryRun: false para ejecutar en producción."),
 });
 
@@ -434,8 +438,9 @@ export const AddObservationSchema = z.object({
   collaboratorId: z
     .number()
     .int()
-    .default(env.DEFAULT_RESPONSIBLE_ID)
-    .describe("ID del colaborador (6 = Brayan)."),
+    .optional()
+    .describe("ID del colaborador autor (omita para usar el usuario autenticado en la sesión activa)."),
+  createdBy: z.string().optional().describe("Nombre o usuario autor de la nota."),
   dryRun: z.boolean().default(true).describe("Modo simulación de seguridad."),
 });
 
@@ -585,6 +590,62 @@ export const DeleteIncidenciaSchema = z.object({
     .boolean()
     .default(true)
     .describe("Modo simulación de seguridad."),
+});
+
+export const AddStageCollaboratorSchema = z.object({
+  progressId: z.number().int().describe("ID del progreso de etapa (stageProgressId)."),
+  responsibleId: z.number().int().optional().describe("ID del colaborador a asignar (omita para usar usuario autenticado)."),
+  dryRun: z.boolean().default(true).describe("Modo simulación de seguridad."),
+});
+
+export const RemoveStageCollaboratorSchema = z.object({
+  progressId: z.number().int().describe("ID del progreso de etapa (stageProgressId)."),
+  collaboratorId: z.number().int().describe("ID del colaborador a remover."),
+  dryRun: z.boolean().default(true).describe("Modo simulación de seguridad."),
+});
+
+export const SyncSprintWorkItemsSchema = z.object({
+  sprintId: z.number().int().describe("ID del Sprint específico cuyos work items se sincronizarán desde Azure DevOps / GitLab."),
+});
+
+export const GetDailyReportSchema = z.object({
+  startDate: z.string().optional().describe("Fecha inicio en formato YYYY-MM-DD o ISO 8601 (omita para hoy)."),
+  endDate: z.string().optional().describe("Fecha fin en formato YYYY-MM-DD o ISO 8601 (omita para hoy)."),
+  today: z.string().optional().describe("Fecha de referencia 'hoy' (omita para hoy actual)."),
+  serviceIds: z.union([z.string(), z.number().int()]).optional().describe("ID o lista de IDs de servicio para filtrar."),
+});
+
+export const GetCapacityWorkloadSchema = z.object({
+  year: z.number().int().optional().describe("Año a consultar (ej. 2026)."),
+  month: z.number().int().optional().describe("Mes a consultar (1-12)."),
+  projectId: z.number().int().optional().describe("ID de proyecto opcional."),
+  responsibleId: z.number().int().optional().describe("ID del responsable a inspeccionar (omita para usar usuario en sesión)."),
+});
+
+export const GetAppIssuesSchema = z.object({
+  id: z.number().int().optional().describe("ID del issue técnico a consultar puntualmente."),
+  status: z.string().optional().describe("Filtro de estado del issue (Open, In Progress, Resolved, Closed)."),
+  severity: z.string().optional().describe("Filtro de severidad (Low, Medium, High, Critical)."),
+  reportedById: z.number().int().optional().describe("Filtro por ID de quien reportó."),
+});
+
+export const ReportAppIssueSchema = z.object({
+  title: z.string().min(3).max(200).describe("Título breve del error o falla reportada."),
+  description: z.string().min(5).max(4000).describe("Descripción detallada del fallo, pasos para reproducir o comportamiento observado."),
+  severity: z.enum(["Low", "Medium", "High", "Critical"]).default("Medium").describe("Severidad de la falla técnica."),
+  pageUrl: z.string().max(500).optional().describe("URL o vista del sistema donde ocurrió el problema."),
+  dryRun: z.boolean().default(true).describe("Modo simulación de seguridad. En true valida sin insertar en base de datos."),
+});
+
+export const UpdateAppIssueStatusSchema = z.object({
+  id: z.number().int().describe("ID del issue a actualizar."),
+  status: z.string().describe("Nuevo estado (In Progress, Resolved, Closed, etc.)."),
+  resolutionNotes: z.string().max(2000).optional().describe("Notas técnicas o comentarios sobre la solución del issue."),
+  dryRun: z.boolean().default(true).describe("Modo simulación de seguridad."),
+});
+
+export const GetProjectRepositoriesSchema = z.object({
+  projectId: z.number().int().describe("ID del proyecto cuyos repositorios y estado CI/CD se consultarán."),
 });
 
 // ============================================================================
@@ -749,6 +810,60 @@ export function getToolDefinitions() {
         "Elimina una incidencia por su ID. SEGURIDAD: Modo Dry-Run activo por defecto.",
       inputSchema: toJsonSchemaClean(DeleteIncidenciaSchema),
     },
+    {
+      name: "track_add_stage_collaborator",
+      description:
+        "Asigna un colaborador formal a una etapa de proceso específica de una actividad (apoyo total en etapa). SEGURIDAD: Modo Dry-Run activo por defecto.",
+      inputSchema: toJsonSchemaClean(AddStageCollaboratorSchema),
+    },
+    {
+      name: "track_remove_stage_collaborator",
+      description:
+        "Remueve un colaborador de una etapa de proceso específica de una actividad. SEGURIDAD: Modo Dry-Run activo por defecto.",
+      inputSchema: toJsonSchemaClean(RemoveStageCollaboratorSchema),
+    },
+    {
+      name: "track_sync_sprint_work_items",
+      description:
+        "Sincroniza selectivamente los work items internos de un único sprint específico desde Azure DevOps o GitLab.",
+      inputSchema: toJsonSchemaClean(SyncSprintWorkItemsSchema),
+    },
+    {
+      name: "track_get_daily_report",
+      description:
+        "Obtiene el reporte diario consolidado de horas (actividades, etapas y reuniones) por persona y detecta días faltantes de captura. Operación 100% LECTURA.",
+      inputSchema: toJsonSchemaClean(GetDailyReportSchema),
+    },
+    {
+      name: "track_get_capacity_workload",
+      description:
+        "Consulta la capacidad esperada en horas (semanal/mensual) de una persona y verifica el porcentaje de cumplimiento institucional (alerta si es menor al 60%). Operación 100% LECTURA.",
+      inputSchema: toJsonSchemaClean(GetCapacityWorkloadSchema),
+    },
+    {
+      name: "track_get_app_issues",
+      description:
+        "Consulta y filtra reportes de fallas técnicas, errores o bugs de la plataforma institucional (por estado, severidad o ID). Operación 100% LECTURA.",
+      inputSchema: toJsonSchemaClean(GetAppIssuesSchema),
+    },
+    {
+      name: "track_report_app_issue",
+      description:
+        "Reporta un error técnico, bug o falla operativa en la aplicación institucional. SEGURIDAD: Modo Dry-Run activo por defecto.",
+      inputSchema: toJsonSchemaClean(ReportAppIssueSchema),
+    },
+    {
+      name: "track_update_app_issue_status",
+      description:
+        "Actualiza el estado de un bug o issue técnico (Open, In Progress, Resolved, Closed) y registra notas de resolución técnica. SEGURIDAD: Modo Dry-Run activo por defecto.",
+      inputSchema: toJsonSchemaClean(UpdateAppIssueStatusSchema),
+    },
+    {
+      name: "track_get_project_repositories",
+      description:
+        "Consulta los repositorios Git vinculados a un proyecto y la información de pipelines CI/CD. Operación 100% LECTURA.",
+      inputSchema: toJsonSchemaClean(GetProjectRepositoriesSchema),
+    },
   ];
 }
 
@@ -827,9 +942,16 @@ export async function handleToolCall(
 
       let targetResponsibleId = parsed.responsibleId;
       if (!targetResponsibleId && parsed.responsibleName) {
-        const liveResponsibles = await catalogService.getResponsibles();
-        const resolved = resolveResponsibleFromText(parsed.responsibleName, liveResponsibles);
-        targetResponsibleId = resolved.id;
+        if (/^(yo|mi persona|mi|mismo)$/i.test(parsed.responsibleName.trim())) {
+          targetResponsibleId = authManager.getResponsibleId();
+        } else {
+          const liveResponsibles = await catalogService.getResponsibles();
+          const resolved = resolveResponsibleFromText(parsed.responsibleName, liveResponsibles);
+          targetResponsibleId = resolved.id;
+        }
+      }
+      if (!targetResponsibleId) {
+        targetResponsibleId = authManager.getResponsibleId();
       }
 
       return await activityService.getMyActivities(
@@ -978,14 +1100,21 @@ export async function handleToolCall(
         if (foundProj) targetProjectId = foundProj.id;
       }
 
-      // Resolver responsable objetivo por ID, por nombre o por inferencia
-      let targetResponsibleId = parsed.responsibleId || inferred.responsibleId;
-      if (parsed.responsibleName) {
-        const resolvedResp = resolveResponsibleFromText(
-          parsed.responsibleName,
-          liveResponsibles,
-        );
-        targetResponsibleId = resolvedResp.id;
+      // Resolver responsable objetivo por ID, por nombre, por inferencia o por usuario logueado en la sesión activa ("yo")
+      let targetResponsibleId = parsed.responsibleId;
+      if (!targetResponsibleId && parsed.responsibleName) {
+        if (/^(yo|mi persona|mi|mismo)$/i.test(parsed.responsibleName.trim())) {
+          targetResponsibleId = authManager.getResponsibleId();
+        } else {
+          const resolvedResp = resolveResponsibleFromText(
+            parsed.responsibleName,
+            liveResponsibles,
+          );
+          targetResponsibleId = resolvedResp.id;
+        }
+      }
+      if (!targetResponsibleId) {
+        targetResponsibleId = authManager.getResponsibleId() || inferred.responsibleId;
       }
 
       const cleanedDescription = cleanEmailOrTicketText(parsed.description);
@@ -1003,6 +1132,8 @@ export async function handleToolCall(
         status: isCompleted ? "Completed" : parsed.status,
         progressPercentage: isCompleted ? 100 : 0,
         estimatedHours: parsed.estimatedHours || inferred.estimatedHours || 2.0,
+        estimatedStartDate: parsed.estimatedStartDate,
+        estimatedDeliveryDate: parsed.estimatedDeliveryDate,
         actualStartDate: isCompleted ? nowIso : undefined,
         actualCompletionDate: isCompleted ? nowIso : undefined,
         productApplicable: parsed.productId !== undefined,
@@ -1248,6 +1379,81 @@ export async function handleToolCall(
     case "track_delete_incidencia": {
       const parsed = DeleteIncidenciaSchema.parse(args || {});
       return await incidenceService.deleteIncidencia(parsed.id, parsed.dryRun);
+    }
+
+    case "track_add_stage_collaborator": {
+      const parsed = AddStageCollaboratorSchema.parse(args || {});
+      return await activityService.addStageCollaborator(
+        parsed.progressId,
+        parsed.responsibleId,
+        parsed.dryRun,
+      );
+    }
+
+    case "track_remove_stage_collaborator": {
+      const parsed = RemoveStageCollaboratorSchema.parse(args || {});
+      return await activityService.removeStageCollaborator(
+        parsed.progressId,
+        parsed.collaboratorId,
+        parsed.dryRun,
+      );
+    }
+
+    case "track_sync_sprint_work_items": {
+      const parsed = SyncSprintWorkItemsSchema.parse(args || {});
+      return await sprintService.syncWorkItemsBySprint(parsed.sprintId);
+    }
+
+    case "track_get_daily_report": {
+      const parsed = GetDailyReportSchema.parse(args || {});
+      return await reportService.getDailyReport(parsed);
+    }
+
+    case "track_get_capacity_workload": {
+      const parsed = GetCapacityWorkloadSchema.parse(args || {});
+      return await reportService.getCapacityWorkload(parsed);
+    }
+
+    case "track_get_app_issues": {
+      const parsed = GetAppIssuesSchema.parse(args || {});
+      if (parsed.id) {
+        return await appIssueService.getAppIssueById(parsed.id);
+      }
+      return await appIssueService.getAppIssues({
+        status: parsed.status,
+        severity: parsed.severity,
+        reportedById: parsed.reportedById,
+      });
+    }
+
+    case "track_report_app_issue": {
+      const parsed = ReportAppIssueSchema.parse(args || {});
+      return await appIssueService.reportAppIssue(
+        {
+          title: parsed.title,
+          description: parsed.description,
+          severity: parsed.severity,
+          pageUrl: parsed.pageUrl,
+        },
+        parsed.dryRun,
+      );
+    }
+
+    case "track_update_app_issue_status": {
+      const parsed = UpdateAppIssueStatusSchema.parse(args || {});
+      return await appIssueService.updateAppIssueStatus(
+        parsed.id,
+        {
+          status: parsed.status,
+          resolutionNotes: parsed.resolutionNotes,
+        },
+        parsed.dryRun,
+      );
+    }
+
+    case "track_get_project_repositories": {
+      const parsed = GetProjectRepositoriesSchema.parse(args || {});
+      return await reportService.getProjectRepositories(parsed.projectId);
     }
 
     default:

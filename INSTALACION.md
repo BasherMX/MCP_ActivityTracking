@@ -97,7 +97,7 @@ Descarga la última versión del paquete `.mcpb` desde GitHub Releases:
    - **Modo Dry-Run:** `false` (o `true` si prefieres pruebas de simulación sin inserción en base de datos).
 6. Haz clic en **Instalar / Guardar**.
 
-¡Listo! En la ventana de chat de Claude Desktop aparecerá el ícono de martillo 🔨 con las 23 herramientas listas para ser utilizadas.
+¡Listo! En la ventana de chat de Claude Desktop aparecerá el ícono de martillo 🔨 con las 34 herramientas oficiales listas para ser utilizadas.
 
 ---
 

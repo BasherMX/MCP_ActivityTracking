@@ -242,9 +242,7 @@ export function cleanEmailOrTicketText(rawText: string): string {
   }
 
   text = text.replace(/\s+/g, ' ').trim();
-  if (text.length > 200) {
-    text = text.substring(0, 197) + '...';
-  }
+  // No truncar destructivamente con puntos suspensivos (...)
   return text;
 }
 
@@ -315,51 +313,33 @@ export const ALLOWED_INFINITIVE_VERBS = [
 export function formatStandardizedTitle(rawDescription: string, projectName?: string): string {
   let clean = rawDescription.trim().replace(/^["']|["']$/g, '');
 
-  // 1. Eliminar redundancia del nombre del proyecto (Regla 05)
+  // 1. Eliminar redundancia del nombre del proyecto
   if (projectName) {
     const projRegex = new RegExp(`\\b${projectName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'gi');
     clean = clean.replace(projRegex, '').trim();
   }
 
-  // 2. Determinar verbo en infinitivo (Regla 01)
-  let verb = 'Desarrollar';
-  const lower = clean.toLowerCase();
-
-  if (/(correg|error|bug|fix|hotfix|repar)/i.test(lower)) verb = 'Corregir';
-  else if (/(análisis|analiz|investig|evalu)/i.test(lower)) verb = 'Analizar';
-  else if (/(document|md|markdown|guía|manual)/i.test(lower)) verb = 'Documentar';
-  else if (/(configur|setup|ajust)/i.test(lower)) verb = 'Configurar';
-  else if (/(optimiz|mejorar|rendimiento|velocidad)/i.test(lower)) verb = 'Optimizar';
-  else if (/(revis|review|auditor)/i.test(lower)) verb = 'Revisar';
-  else if (/(plan|roadmap|sprint|estimar)/i.test(lower)) verb = 'Planear';
-  else if (/(integr|mcp|api|endpoint|webhook)/i.test(lower)) verb = 'Integrar';
-  else if (/(valid|probar|test|verificar)/i.test(lower)) verb = 'Validar';
-
-  // Remover palabras o sustantivos informales iniciales
-  clean = clean.replace(/^(hacer|realizar|checar|ver la opción de|arreglar|poner|crear|generación de|análisis de|documentación de|solicitud de)\s+/i, '');
-
-  // 3. Garantizar que inicie con verbo en infinitivo si ya tiene uno
-  const firstWord = clean.split(/\s+/)[0];
-  if (firstWord && ALLOWED_INFINITIVE_VERBS.some(v => v.toLowerCase() === firstWord.toLowerCase())) {
+  // 2. Si ya viene con verbo en infinitivo permitido, capitalizarlo y mantenerlo
+  const firstWord = clean.split(/\s+/)[0] || '';
+  const startsWithAllowedVerb = ALLOWED_INFINITIVE_VERBS.some(v => v.toLowerCase() === firstWord.toLowerCase());
+  if (startsWithAllowedVerb) {
     const matched = ALLOWED_INFINITIVE_VERBS.find(v => v.toLowerCase() === firstWord.toLowerCase());
-    if (matched) verb = matched;
-    clean = clean.substring(firstWord.length).trim();
+    if (matched) {
+      clean = matched + clean.substring(firstWord.length);
+    }
+    return clean;
   }
 
-  // 4. Asegurar presencia de "para" (Regla 03)
-  let title = '';
-  if (/\bpara\b/i.test(clean)) {
-    title = `${verb} ${clean}`;
-  } else {
-    title = `${verb} ${clean} para optimizar el flujo operativo institucional`;
+  // 3. Si comienza con frases informales como 'hacer/realizar/checar', normalizar a verbo técnico
+  const informalStart = /^(hacer|realizar|checar|ver la opción de|arreglar|poner)\s+/i;
+  if (informalStart.test(clean)) {
+    clean = clean.replace(informalStart, '').trim();
+    return `Atender ${clean}`;
   }
 
-  // 5. Truncar a ~120 caracteres si sobrepasa (Regla 04)
-  if (title.length > 120) {
-    title = title.substring(0, 117) + '...';
-  }
-
-  return title;
+  // 4. Si el usuario ingresó una descripción o título estructurado (ej. "Actualización en la CI. Solicitud de...")
+  // respetarla directamente sin anteponerle artificialmente "Desarrollar" ni truncarla con "..."
+  return clean;
 }
 
 /**

@@ -51,7 +51,43 @@ async function runDryRunTests() {
   });
   console.log('Resultado URL Evidence (Dry-Run):', JSON.stringify(resUrl, null, 2));
 
-  console.log('\n=== TEST 7: track_get_catalogs (Lectura de Catálogos) ===');
+  console.log('\n=== TEST 7: track_add_observation (con createdBy automático) ===');
+  const resObs = await handleToolCall('track_add_observation', {
+    activityId: 105,
+    type: 'Agreement',
+    content: 'Acuerdo técnico de entrega de formatos de servicios',
+    dryRun: true,
+  });
+  console.log('Resultado Add Observation (Dry-Run):', JSON.stringify(resObs, null, 2));
+
+  console.log('\n=== TEST 8: track_add_stage_collaborator (Colaborador en Etapa) ===');
+  const resCollab = await handleToolCall('track_add_stage_collaborator', {
+    progressId: 2512,
+    responsibleId: 31,
+    dryRun: true,
+  });
+  console.log('Resultado Add Stage Collaborator (Dry-Run):', JSON.stringify(resCollab, null, 2));
+
+  console.log('\n=== TEST 9: track_report_app_issue (Reporte de Falla Técnica) ===');
+  const resIssue = await handleToolCall('track_report_app_issue', {
+    title: 'Error de visualización en panel de métricas',
+    description: 'La gráfica de balance tarda más de 30 segundos en renderizar para usuarios con alto volumen de registros',
+    severity: 'Medium',
+    pageUrl: '/dashboard/metrics',
+    dryRun: true,
+  });
+  console.log('Resultado Report App Issue (Dry-Run):', JSON.stringify(resIssue, null, 2));
+
+  console.log('\n=== TEST 10: track_update_app_issue_status (Resolución de Issue) ===');
+  const resIssueUpdate = await handleToolCall('track_update_app_issue_status', {
+    id: 12,
+    status: 'Resolved',
+    resolutionNotes: 'Se optimizó la consulta indexando la columna responsibleId en BD',
+    dryRun: true,
+  });
+  console.log('Resultado Update App Issue (Dry-Run):', JSON.stringify(resIssueUpdate, null, 2));
+
+  console.log('\n=== TEST 11: track_get_catalogs (Lectura de Catálogos) ===');
   const resCat = await handleToolCall('track_get_catalogs', { catalog: 'all' });
   console.log('Catálogos Proyectos:', resCat.projects.map((p: any) => `${p.id}: ${p.name} (${p.prefix})`));
   console.log('Catálogos Servicios:', resCat.services.map((s: any) => `${s.id}: ${s.name}`));

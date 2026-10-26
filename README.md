@@ -19,7 +19,7 @@ graph TD
     subgraph "Servidor Central Institucional (Podman Container)"
         SSE["Endpoints SSE / Messages<br/>http://10.185.1.2:3333"]
         Middleware["Auth Middleware & Session Isolation<br/>(AsyncLocalStorage)"]
-        Dispatcher["MCP Router & Tool Handler<br/>(23 Tools Activas)"]
+        Dispatcher["MCP Router & Tool Handler<br/>(34 Tools Activas)"]
 
         SSE --> Middleware
         Middleware --> Dispatcher
