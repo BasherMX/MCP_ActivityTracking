@@ -11,19 +11,21 @@ import {
 
 export class AppIssueService {
   /**
-   * Consulta la lista de fallas técnicas o bugs de la aplicación.
+   * Consulta la lista de fallas técnicas (Issue) o propuestas de mejora (Idea) de la aplicación.
    */
   public async getAppIssues(params?: AppIssueFilterParams): Promise<AppIssueDto[]> {
     await authManager.getValidToken();
 
     try {
       logger.info('Consultando lista de AppIssues en la API...');
+      const queryParams: Record<string, any> = {};
+      if (params?.status) queryParams.status = params.status;
+      if (params?.severity) queryParams.severity = params.severity;
+      if (params?.reportedById) queryParams.reportedById = params.reportedById;
+      if (params?.type && params.type !== 'All') queryParams.type = params.type;
+
       const response = await apiClient.get<AppIssueDto[]>('/api/v1/AppIssues', {
-        params: {
-          status: params?.status,
-          severity: params?.severity,
-          reportedById: params?.reportedById,
-        },
+        params: queryParams,
       });
       return response.data || [];
     } catch (error: any) {
@@ -33,7 +35,7 @@ export class AppIssueService {
   }
 
   /**
-   * Consulta el detalle de un AppIssue por su ID.
+   * Consulta el detalle de un AppIssue o Idea por su ID.
    */
   public async getAppIssueById(id: number): Promise<AppIssueDto> {
     await authManager.getValidToken();
@@ -49,7 +51,7 @@ export class AppIssueService {
   }
 
   /**
-   * Reporta un nuevo error, falla o bug en el sistema.
+   * Reporta un nuevo error/bug ('Issue') o una propuesta de mejora ('Idea') en el sistema.
    * SEGURIDAD: Interceptado en modo Dry-Run por defecto.
    */
   public async reportAppIssue(
@@ -60,9 +62,11 @@ export class AppIssueService {
     const isDryRun = dryRun !== undefined ? dryRun : env.DRY_RUN_MODE;
     const currentResponsibleId = authManager.getResponsibleId();
     const currentResponsibleName = authManager.getResponsibleName();
+    const effectiveType = data.type || 'Issue';
+    const effectiveSeverity = data.severity || (effectiveType === 'Idea' ? 'Low' : 'Medium');
 
     if (isDryRun) {
-      logger.warn(`[DRY-RUN INTERCEPTOR] Simulación de reporte de AppIssue: '${data.title}'.`);
+      logger.warn(`[DRY-RUN INTERCEPTOR] Simulación de reporte de ${effectiveType}: '${data.title}'.`);
       return {
         dryRun: true,
         status: 'SIMULATION_SUCCESS',
@@ -70,28 +74,33 @@ export class AppIssueService {
         reportedIssue: {
           title: data.title,
           description: data.description,
-          severity: data.severity,
+          type: effectiveType,
+          severity: effectiveSeverity,
           pageUrl: data.pageUrl,
+          hasAttachment: !!(data.fileBuffer && data.fileName),
+          attachmentFileName: data.fileName || null,
           reportedById: currentResponsibleId,
           reportedByName: currentResponsibleName,
           status: 'Open',
         },
-        message: `Simulación exitosa: Issue '${data.title}' validado con severidad '${data.severity}'. Base de datos intacta (Modo Dry-Run).`,
+        message: `Simulación exitosa: ${effectiveType} '${data.title}' validado con severidad '${effectiveSeverity}'. Base de datos intacta (Modo Dry-Run).`,
       };
     }
 
     await authManager.getValidToken();
-    logger.info(`[PRODUCCIÓN REAL] Creando nuevo AppIssue: '${data.title}'...`);
+    logger.info(`[PRODUCCIÓN REAL] Creando nuevo ${effectiveType}: '${data.title}'...`);
 
     const formData = new FormData();
     formData.append('Title', data.title);
     formData.append('Description', data.description);
-    formData.append('Severity', data.severity);
+    formData.append('Type', effectiveType);
+    formData.append('Severity', effectiveSeverity);
     if (data.pageUrl) formData.append('PageUrl', data.pageUrl);
     if (data.userAgent) formData.append('UserAgent', data.userAgent);
 
     if (data.fileBuffer && data.fileName) {
-      const blob = new Blob([data.fileBuffer], { type: data.contentType || 'application/octet-stream' });
+      const blobType = data.contentType || data.mimeType || 'application/octet-stream';
+      const blob = new Blob([data.fileBuffer], { type: blobType });
       formData.append('File', blob, data.fileName);
     }
 
@@ -105,7 +114,7 @@ export class AppIssueService {
   }
 
   /**
-   * Actualiza el estado y notas de resolución de un AppIssue.
+   * Actualiza el estado y notas de resolución de un AppIssue o Idea.
    */
   public async updateAppIssueStatus(
     id: number,

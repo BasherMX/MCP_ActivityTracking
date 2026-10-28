@@ -59,8 +59,9 @@ Seguridad: toda operación de escritura (create/update/delete/advance/log/attach
    - Para consultar el resumen diario real consolidado usa track_get_daily_report.
    - Para evaluar el balance de trabajo semanal/mensual usa track_get_capacity_workload (el porcentaje de captura debe mantenerse por encima del 60% de la capacidad esperada).
 
-7) REPORTE DE FALLAS TÉCNICAS:
-   - Para reportar bugs o errores del sistema usa track_report_app_issue con title, description y severity.
+7) REPORTE DE FALLAS TÉCNICAS Y PROPUESTAS DE MEJORA (ISSUES E IDEAS):
+   - Para reportar bugs o errores del sistema usa track_report_app_issue (con type: 'Issue', title, description, severity y captura opcional).
+   - Para proponer nuevas funciones o mejoras institucionales usa track_submit_idea (o track_report_app_issue con type: 'Idea'), indicando title, description y opcionalmente captura de pantalla (screenshotBase64 o screenshotPath).
 
 8) Catálogo de tipos: el valor correcto para "Diseño" es el literal "Desing" (typo oficial del backend).
 

@@ -6,34 +6,22 @@ nombres y parámetros de las tools. El texto corto equivalente vive también en 
 campo `instructions` del servidor (`src/index.ts`), que los clientes MCP cargan
 automáticamente al conectarse; aquí está el detalle y el contexto de cada regla.
 
-## 1. Cierre de actividades con producto (flujo por etapas)
+## 1. Ciclo de vida automático y cierre de actividades por etapas (v3.11.0 – v3.13.0)
 
-`track_close_activity` **solo** hace `PUT status=Completed, progressPercentage=100`
-(ver `activity-service.ts::closeActivity`). No toca el historial de etapas del
-producto (`process-stages`) ni registra responsable/tiempo en ninguna etapa.
+A partir de las versiones v3.11 a v3.13 del backend Kestrel, **el Estado y el % de Progreso de una actividad ya no se editan a mano**:
+- Al crear una actividad nace en estado **`Pending`** con 0% de progreso.
+- Al avanzar de etapa (`track_advance_process_stage`), el estado pasa automáticamente a **`InProgress`** y se fija `actualStartDate`.
+- El progreso porcentual se reporta en cada registro de tiempo (`track_log_work_hours`) enviando el campo **`progressDelta`** (ej. `+25` para sumar 25 puntos porcentuales, o `-10` si retrocedió). El backend recalcula y acota automáticamente la suma acumulada entre 0 y 100%.
+- Para concluir una actividad, se utiliza **`track_close_activity`**, la cual invoca el endpoint oficial del seguimiento por etapas:
+  `POST /api/v1/process-stages/activity/{id}/complete`
+  Esto cierra la etapa en curso (que debe ser la de mayor orden) y marca la actividad como **`Completed`**.
+- Para cancelar una actividad en cualquier momento (incluso sin etapa activa), se utiliza **`track_cancel_activity`** (`POST /api/v1/process-stages/activity/{id}/cancel`), la cual cierra la etapa activa sin marcar la actividad como completada (pasa a **`Cancelled`**).
+- Para reabrir una actividad completada o cancelada, se utiliza **`track_reopen_activity`** (`POST /api/v1/process-stages/activity/{id}/reopen`), que reabre la última etapa cerrada y regresa el estado a **`InProgress`** (o `Pending`), limpiando la fecha de finalización.
+- Para consultar rápidamente la etapa activa actual de una actividad (su `stageProgressId`, orden, responsable y horas reales acumuladas), se utiliza **`track_get_current_process_stage`** (`GET /api/v1/process-stages/activity/{id}/current`).
+- En observaciones (`track_add_observation`), el tipo `"Progreso"` fue retirado en favor de `"Resolución"` (para marcar bloqueadores como resueltos).
 
-Si la actividad tiene `productApplicable: true` y su producto tiene un flujo de
-etapas configurado (`track_get_process_stages({ productId })` devuelve etapas),
-cerrarla "bien" significa que el histórico de "Progreso del Proceso" quede
-completo, no solo el estado final. Regla acordada con el usuario:
-
-> Al cerrar una actividad, debe pasar por cada etapa y en cada etapa registrarse
-> un responsable y tiempo, en caso de que exista flujo de etapas.
-
-Flujo recomendado:
-
-1. `track_advance_process_stage` con `advanceAll: true` (o etapa por etapa con
-   `stageId`), pasando `assignedToId` explícito — esto crea un registro de
-   "stage progress" con responsable y fecha de inicio por etapa.
-2. `track_log_work_hours` usando el `stageProgressId` devuelto por el paso 1
-   (campo `id` de la respuesta de `advanceProcessStage`), con las horas reales.
-3. Recién entonces `track_update_activity` (o `track_close_activity`) con
-   `status: "Completed"`, `progressPercentage: 100`.
-
-Atajo: `track_update_activity` con `autoAdvanceStages: true` hace el paso 1
-automáticamente antes de guardar (ver `activity-service.ts`, caso
-`track_update_activity`). Aun así, el registro de horas (paso 2) debe hacerse
-aparte, porque `autoAdvanceStages` no registra tiempo.
+Regla para actividades con producto (`productApplicable: true`):
+> Antes de cerrar una actividad, debe recorrer cada una de las etapas configuradas en su producto y registrar en cada una de ellas el responsable y las horas trabajadas. Una vez en la etapa final, se invoca `track_close_activity`.
 
 ### Caso real: AR023 (id 10798, producto 16 "Implementación de sistemas...")
 
@@ -151,3 +139,13 @@ Todas las tools de escritura tienen `dryRun: true` por defecto
 ("SEGURIDAD: Modo Dry-Run activo por defecto"). El patrón de trabajo seguro es
 siempre: dry-run → validar el payload simulado → repetir con `dryRun: false`
 solo si el dry-run refleja exactamente lo esperado.
+
+## 11. Reporte de fallas técnicas (Issues) y propuestas de mejora (Ideas)
+
+- La API de AppIssues (`POST /api/v1/AppIssues`) exige el campo multipart `Type` (`"Issue"` o `"Idea"`), `Title`, `Description` y `Severity`.
+- Para proponer nuevas funciones o mejoras institucionales, usa **`track_submit_idea`** (o `track_report_app_issue` con `type: "Idea"`).
+- Para reportar errores técnicos, bugs o problemas operativos, usa **`track_report_app_issue`** (por defecto `type: "Issue"`).
+- Se puede adjuntar opcionalmente una captura de pantalla enviándola en Base64 (`screenshotBase64`) o indicando la ruta a un archivo de imagen en disco (`screenshotPath`).
+- Severidades: `"Low"`, `"Medium"`, `"High"`, `"Critical"`. Si se omite, para `Idea` se asigna automáticamente `"Low"` y para `Issue` se asigna `"Medium"`.
+- Para consultar o filtrar el backlog de fallas e ideas, **`track_get_app_issues`** incluye el filtro `type` (`"Issue"`, `"Idea"` o `"All"`).
+

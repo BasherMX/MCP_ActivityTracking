@@ -45,6 +45,12 @@ async function runDryRunTests() {
   });
   console.log('Resultado Reopen (Dry-Run):', JSON.stringify(resReopen, null, 2));
 
+  console.log('\n=== TEST 4.3: track_get_current_process_stage (Lectura de Etapa Activa) ===');
+  const resCurrentStage = await handleToolCall('track_get_current_process_stage', {
+    activityId: 105,
+  });
+  console.log('Resultado Current Process Stage:', JSON.stringify(resCurrentStage, null, 2));
+
   console.log('\n=== TEST 5: track_log_work_hours con progressDelta (Dry-Run) ===');
   const resLog = await handleToolCall('track_log_work_hours', {
     activityId: 105,
@@ -86,10 +92,28 @@ async function runDryRunTests() {
     title: 'Error de visualización en panel de métricas',
     description: 'La gráfica de balance tarda más de 30 segundos en renderizar para usuarios con alto volumen de registros',
     severity: 'Medium',
+    type: 'Issue',
     pageUrl: '/dashboard/metrics',
     dryRun: true,
   });
   console.log('Resultado Report App Issue (Dry-Run):', JSON.stringify(resIssue, null, 2));
+
+  console.log('\n=== TEST 9.1: track_submit_idea (Propuesta de Mejora con Captura Base64) ===');
+  const resIdea = await handleToolCall('track_submit_idea', {
+    title: 'Exportación masiva de reportes a formato XLSX y PDF',
+    description: 'Agregar botón para descargar en un click el reporte mensual consolidado en formato Excel con gráficas incluidas.',
+    screenshotBase64: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+    fileName: 'mockup_exportacion.png',
+    pageUrl: '/reports/monthly',
+    dryRun: true,
+  });
+  console.log('Resultado Submit Idea (Dry-Run):', JSON.stringify(resIdea, null, 2));
+
+  console.log('\n=== TEST 9.2: track_get_app_issues con filtro de Tipo "Idea" ===');
+  const resGetIdeas = await handleToolCall('track_get_app_issues', {
+    type: 'Idea',
+  });
+  console.log(`Resultado Get App Ideas (Total recuperadas: ${Array.isArray(resGetIdeas) ? resGetIdeas.length : 0})`);
 
   console.log('\n=== TEST 10: track_update_app_issue_status (Resolución de Issue) ===');
   const resIssueUpdate = await handleToolCall('track_update_app_issue_status', {

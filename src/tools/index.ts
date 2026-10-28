@@ -1,5 +1,8 @@
 import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
+import fs from "node:fs";
+import path from "node:path";
+import mime from "mime-types";
 import { sprintService } from "../services/sprint-service.js";
 import { activityService } from "../services/activity-service.js";
 import { timesheetService } from "../services/timesheet-service.js";
@@ -650,19 +653,66 @@ export const GetCapacityWorkloadSchema = z.object({
   responsibleId: z.number().int().optional().describe("ID del responsable a inspeccionar (omita para usar usuario en sesión)."),
 });
 
+function resolveScreenshotAttachment(params: {
+  screenshotBase64?: string;
+  screenshotPath?: string;
+  fileName?: string;
+}): { fileBuffer?: Buffer; fileName?: string; mimeType?: string } {
+  if (params.screenshotBase64) {
+    const raw = params.screenshotBase64.includes(";base64,")
+      ? params.screenshotBase64.split(";base64,").pop()!
+      : params.screenshotBase64;
+    const buffer = Buffer.from(raw, "base64");
+    const name = params.fileName || "screenshot.png";
+    const mimeType = (mime.lookup(name) as string) || "image/png";
+    return { fileBuffer: buffer, fileName: name, mimeType };
+  }
+
+  if (params.screenshotPath) {
+    const resolved = path.resolve(params.screenshotPath);
+    if (!fs.existsSync(resolved)) {
+      throw new Error(`El archivo de captura no existe en la ruta especificada: ${resolved}`);
+    }
+    const buffer = fs.readFileSync(resolved);
+    const name = params.fileName || path.basename(resolved);
+    const mimeType = (mime.lookup(resolved) as string) || "image/png";
+    return { fileBuffer: buffer, fileName: name, mimeType };
+  }
+
+  return {};
+}
+
 export const GetAppIssuesSchema = z.object({
-  id: z.number().int().optional().describe("ID del issue técnico a consultar puntualmente."),
-  status: z.string().optional().describe("Filtro de estado del issue (Open, In Progress, Resolved, Closed)."),
+  id: z.number().int().optional().describe("ID del issue técnico o idea a consultar puntualmente."),
+  type: z
+    .enum(["Issue", "Idea", "All"])
+    .default("All")
+    .describe("Filtro por tipo de reporte: 'Issue' (fallas/bugs), 'Idea' (propuestas de mejora) o 'All'."),
+  status: z.string().optional().describe("Filtro de estado del issue o idea (Open, In Progress, Resolved, Closed)."),
   severity: z.string().optional().describe("Filtro de severidad (Low, Medium, High, Critical)."),
   reportedById: z.number().int().optional().describe("Filtro por ID de quien reportó."),
 });
 
 export const ReportAppIssueSchema = z.object({
-  title: z.string().min(3).max(200).describe("Título breve del error o falla reportada."),
-  description: z.string().min(5).max(4000).describe("Descripción detallada del fallo, pasos para reproducir o comportamiento observado."),
-  severity: z.enum(["Low", "Medium", "High", "Critical"]).default("Medium").describe("Severidad de la falla técnica."),
-  pageUrl: z.string().max(500).optional().describe("URL o vista del sistema donde ocurrió el problema."),
+  title: z.string().min(3).max(200).describe("Título breve del error o propuesta reportada."),
+  description: z.string().min(5).max(4000).describe("Descripción detallada del fallo, propuesta o comportamiento observado."),
+  type: z.enum(["Issue", "Idea"]).default("Issue").describe("Tipo de reporte: 'Issue' (error técnico/bug) o 'Idea' (propuesta de mejora)."),
+  severity: z.enum(["Low", "Medium", "High", "Critical"]).optional().describe("Severidad técnica. Si se omite, se deduce ('Medium' para Issue, 'Low' para Idea)."),
+  pageUrl: z.string().max(500).optional().describe("URL o vista del sistema donde ocurrió el problema o aplicaría la idea."),
+  screenshotBase64: z.string().optional().describe("Captura de pantalla en Base64 para adjuntar al reporte (opcional)."),
+  screenshotPath: z.string().optional().describe("Ruta local al archivo de captura de pantalla para adjuntar (opcional)."),
+  fileName: z.string().optional().describe("Nombre opcional del archivo adjunto (ej. 'error.png', 'captura.jpg')."),
   dryRun: z.boolean().default(true).describe("Modo simulación de seguridad. En true valida sin insertar en base de datos."),
+});
+
+export const SubmitIdeaSchema = z.object({
+  title: z.string().min(3).max(200).describe("Título descriptivo de la idea o propuesta de mejora."),
+  description: z.string().min(5).max(4000).describe("Descripción detallada de la propuesta de mejora, valor agregado o flujo esperado."),
+  screenshotBase64: z.string().optional().describe("Captura de pantalla, diseño o mock en formato Base64 (opcional)."),
+  screenshotPath: z.string().optional().describe("Ruta local al archivo de imagen o mockup para adjuntar como evidencia de la propuesta (opcional)."),
+  fileName: z.string().optional().describe("Nombre del archivo adjunto (ej. 'propuesta_mejora.png')."),
+  pageUrl: z.string().max(500).optional().describe("URL o sección de la aplicación donde aplicaría la mejora (opcional)."),
+  dryRun: z.boolean().default(true).describe("Modo simulación de seguridad. En true valida sin registrar en base de datos."),
 });
 
 export const UpdateAppIssueStatusSchema = z.object({
@@ -889,14 +939,20 @@ export function getToolDefinitions() {
     {
       name: "track_get_app_issues",
       description:
-        "Consulta y filtra reportes de fallas técnicas, errores o bugs de la plataforma institucional (por estado, severidad o ID). Operación 100% LECTURA.",
+        "Consulta y filtra reportes de fallas técnicas (Issues) o propuestas de mejora (Ideas) de la plataforma institucional (por tipo, estado, severidad o ID). Operación 100% LECTURA.",
       inputSchema: toJsonSchemaClean(GetAppIssuesSchema),
     },
     {
       name: "track_report_app_issue",
       description:
-        "Reporta un error técnico, bug o falla operativa en la aplicación institucional. SEGURIDAD: Modo Dry-Run activo por defecto.",
+        "Reporta un error técnico (Issue) o una propuesta de mejora (Idea) en la aplicación institucional, con soporte opcional para captura de pantalla (screenshot en Base64 o ruta local). SEGURIDAD: Modo Dry-Run activo por defecto.",
       inputSchema: toJsonSchemaClean(ReportAppIssueSchema),
+    },
+    {
+      name: "track_submit_idea",
+      description:
+        "Registra una propuesta de mejora o nueva idea para la plataforma institucional, con soporte para adjuntar captura de pantalla (screenshot en Base64 o ruta local). SEGURIDAD: Modo Dry-Run activo por defecto.",
+      inputSchema: toJsonSchemaClean(SubmitIdeaSchema),
     },
     {
       name: "track_update_app_issue_status",
@@ -1489,17 +1545,51 @@ export async function handleToolCall(
         status: parsed.status,
         severity: parsed.severity,
         reportedById: parsed.reportedById,
+        type: parsed.type,
       });
     }
 
     case "track_report_app_issue": {
       const parsed = ReportAppIssueSchema.parse(args || {});
+      const attachment = resolveScreenshotAttachment({
+        screenshotBase64: parsed.screenshotBase64,
+        screenshotPath: parsed.screenshotPath,
+        fileName: parsed.fileName,
+      });
+
       return await appIssueService.reportAppIssue(
         {
           title: parsed.title,
           description: parsed.description,
+          type: parsed.type,
           severity: parsed.severity,
           pageUrl: parsed.pageUrl,
+          fileBuffer: attachment.fileBuffer,
+          fileName: attachment.fileName,
+          contentType: attachment.mimeType,
+        },
+        parsed.dryRun,
+      );
+    }
+
+    case "track_submit_idea": {
+      const parsed = SubmitIdeaSchema.parse(args || {});
+      const attachment = resolveScreenshotAttachment({
+        screenshotBase64: parsed.screenshotBase64,
+        screenshotPath: parsed.screenshotPath,
+        fileName: parsed.fileName,
+      });
+
+      return await appIssueService.reportAppIssue(
+        {
+          title: parsed.title,
+          description: parsed.description,
+          type: "Idea",
+          severity: "Low",
+          pageUrl: parsed.pageUrl,
+          fileBuffer: attachment.fileBuffer,
+          fileName: attachment.fileName,
+          contentType: attachment.mimeType,
         },
         parsed.dryRun,
       );

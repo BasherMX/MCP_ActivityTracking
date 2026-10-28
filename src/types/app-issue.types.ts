@@ -3,6 +3,7 @@ export interface AppIssueDto {
   title?: string | null;
   description?: string | null;
   severity?: string | null;
+  type?: string | null;
   status?: string | null;
   pageUrl?: string | null;
   reportedById?: number;
@@ -19,12 +20,14 @@ export interface AppIssueDto {
 export interface CreateAppIssueDto {
   title: string;
   description: string;
-  severity: string;
+  severity?: string;
+  type?: string;
   pageUrl?: string | null;
   userAgent?: string | null;
   fileName?: string | null;
   fileBuffer?: Buffer;
   contentType?: string | null;
+  mimeType?: string | null;
 }
 
 export interface UpdateAppIssueStatusDto {
@@ -36,4 +39,5 @@ export interface AppIssueFilterParams {
   status?: string;
   severity?: string;
   reportedById?: number;
+  type?: string;
 }
