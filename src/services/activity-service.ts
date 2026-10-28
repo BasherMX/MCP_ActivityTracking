@@ -7,6 +7,9 @@ import {
   CreateActivityDto,
   UpdateActivityDto,
   AdHocStageProgressDto,
+  CompleteActivityDto,
+  CancelActivityDto,
+  ActivityStageProgressDto,
 } from "../types/openapi.js";
 import { catalogService } from "./catalog-service.js";
 import { logger } from "../utils/logger.js";
@@ -345,7 +348,8 @@ export class ActivityService {
           priority: data.priority,
           responsibleId: data.responsibleId,
           estimatedHours: data.estimatedHours,
-          status: data.status || "InProgress",
+          status: "Pending",
+          progressPercentage: 0,
         },
         payloadPrepared: data,
         message:
@@ -413,56 +417,145 @@ export class ActivityService {
   }
 
   /**
-   * Cierra una actividad al 100% y estado Completed.
+   * Concluye y cierra formalmente una actividad cerrando su última etapa de proceso.
+   * Invoca el endpoint oficial POST /api/v1/process-stages/activity/{activityId}/complete (v3.12.0+)
    * SEGURIDAD EN PRODUCCIÓN: Interceptado en modo dry-run.
    */
   public async closeActivity(
     idOrKey: number | string,
-    actualHours?: number,
-    completionNotes?: string,
+    notes?: string,
+    actualCompletionDate?: string,
     dryRun = true,
   ): Promise<any> {
     const id = await this.resolveNumericActivityId(idOrKey);
+    await authManager.getValidToken();
     const isDryRun = dryRun !== undefined ? dryRun : env.DRY_RUN_MODE;
-    const nowIso = new Date().toISOString();
+    const nowIso = actualCompletionDate || new Date().toISOString();
 
-    const updatePayload: UpdateActivityDto = {
-      status: "Completed",
-      progressPercentage: 100,
+    const payload: CompleteActivityDto = {
       actualCompletionDate: nowIso,
-      notes: completionNotes,
+      notes: notes || "Actividad concluida formalmente",
     };
 
     if (isDryRun) {
       logger.warn(
-        `[DRY-RUN INTERCEPTOR] Simulación de cierre de actividad ${id}.`,
+        `[DRY-RUN INTERCEPTOR] Simulación de conclusión y cierre de actividad ${id}.`,
       );
       return {
         dryRun: true,
         status: "SIMULATION_SUCCESS",
-        targetEndpoint: `PUT /api/v1/Activities/${id} (Cierre)`,
+        targetEndpoint: `POST /api/v1/process-stages/activity/${id}/complete`,
         activityId: id,
-        actualHoursReported: actualHours,
-        appliedChanges: updatePayload,
-        message: `Simulación de cierre completada al 100% para actividad ${id}. Base de datos intacta.`,
+        appliedChanges: payload,
+        message: `Simulación de cierre exitosa: La actividad ${id} cerrará su etapa activa y el backend la marcará como Completed. Base de datos productiva intacta.`,
       };
     }
 
-    await authManager.getValidToken();
-    const existing = await this.getActivityDetail(id);
-    const response = await apiClient.put<ActivityDto>(
-      `/api/v1/Activities/${id}`,
-      {
-        ...existing,
-        ...updatePayload,
-      },
+    logger.info(`[PRODUCCIÓN REAL] Ejecutando POST /api/v1/process-stages/activity/${id}/complete...`);
+    const response = await apiClient.post(
+      `/api/v1/process-stages/activity/${id}/complete`,
+      payload,
     );
     return response.data;
   }
 
   /**
-   * Consulta las etapas de proceso configuradas para un producto.
+   * Cancela una actividad activa cerrando su etapa sin marcarla como completada.
+   * Invoca POST /api/v1/process-stages/activity/{activityId}/cancel (v3.13.0+)
+   * SEGURIDAD EN PRODUCCIÓN: Interceptado en modo dry-run.
    */
+  public async cancelActivity(
+    idOrKey: number | string,
+    reason?: string,
+    dryRun = true,
+  ): Promise<any> {
+    const id = await this.resolveNumericActivityId(idOrKey);
+    await authManager.getValidToken();
+    const isDryRun = dryRun !== undefined ? dryRun : env.DRY_RUN_MODE;
+
+    const payload: CancelActivityDto = {
+      reason: reason || undefined,
+    };
+
+    if (isDryRun) {
+      logger.warn(
+        `[DRY-RUN INTERCEPTOR] Simulación de cancelación de actividad ${id}.`,
+      );
+      return {
+        dryRun: true,
+        status: "SIMULATION_SUCCESS",
+        targetEndpoint: `POST /api/v1/process-stages/activity/${id}/cancel`,
+        activityId: id,
+        reason,
+        message: `Simulación de cancelación exitosa: La actividad ${id} cerrará su etapa activa sin completarse y pasará a estado Cancelled. Base de datos productiva intacta.`,
+      };
+    }
+
+    logger.info(`[PRODUCCIÓN REAL] Ejecutando POST /api/v1/process-stages/activity/${id}/cancel...`);
+    const response = await apiClient.post(
+      `/api/v1/process-stages/activity/${id}/cancel`,
+      payload,
+    );
+    return response.data;
+  }
+
+  /**
+   * Reabre una actividad previamente completada o cancelada, reactivando su última etapa.
+   * Invoca POST /api/v1/process-stages/activity/{activityId}/reopen (v3.13.0+)
+   * SEGURIDAD EN PRODUCCIÓN: Interceptado en modo dry-run.
+   */
+  public async reopenActivity(
+    idOrKey: number | string,
+    dryRun = true,
+  ): Promise<any> {
+    const id = await this.resolveNumericActivityId(idOrKey);
+    await authManager.getValidToken();
+    const isDryRun = dryRun !== undefined ? dryRun : env.DRY_RUN_MODE;
+
+    if (isDryRun) {
+      logger.warn(
+        `[DRY-RUN INTERCEPTOR] Simulación de reapertura de actividad ${id}.`,
+      );
+      return {
+        dryRun: true,
+        status: "SIMULATION_SUCCESS",
+        targetEndpoint: `POST /api/v1/process-stages/activity/${id}/reopen`,
+        activityId: id,
+        message: `Simulación de reapertura exitosa: La actividad ${id} reabrirá su última etapa cerrada y regresará a InProgress/Pending. Base de datos productiva intacta.`,
+      };
+    }
+
+    logger.info(`[PRODUCCIÓN REAL] Ejecutando POST /api/v1/process-stages/activity/${id}/reopen...`);
+    const response = await apiClient.post(
+      `/api/v1/process-stages/activity/${id}/reopen`,
+      {},
+    );
+    return response.data;
+  }
+
+  /**
+   * Obtiene la etapa del proceso actualmente activa para una actividad (100% LECTURA).
+   * Invoca GET /api/v1/process-stages/activity/{activityId}/current (v3.12+)
+   */
+  public async getCurrentProcessStage(
+    idOrKey: number | string,
+  ): Promise<ActivityStageProgressDto | null> {
+    const id = await this.resolveNumericActivityId(idOrKey);
+    await authManager.getValidToken();
+    try {
+      const response = await apiClient.get<ActivityStageProgressDto>(
+        `/api/v1/process-stages/activity/${id}/current`,
+      );
+      return response.data;
+    } catch (error: any) {
+      logger.error(
+        `Error al consultar etapa activa actual de actividad ${id}:`,
+        error?.response?.data || error?.message,
+      );
+      return null;
+    }
+  }
+
   public async getProcessStagesByProduct(productId: number): Promise<any[]> {
     await authManager.getValidToken();
     try {
@@ -552,6 +645,7 @@ export class ActivityService {
     notes?: string,
     dryRun = true,
     productId?: number,
+    completeOnFinish = false,
   ): Promise<any> {
     const isDryRun = dryRun !== undefined ? dryRun : env.DRY_RUN_MODE;
     const effectiveAssignedToId = assignedToId || authManager.getResponsibleId();
@@ -597,6 +691,24 @@ export class ActivityService {
         );
         results.push({ stageId: sId, stageName: stage.name, result: res });
       }
+    }
+
+    if (completeOnFinish) {
+      const closeRes = await this.closeActivity(
+        activityId,
+        notes || "Conclusión automática de actividad tras avanzar todas las etapas",
+        undefined,
+        dryRun,
+      );
+      return {
+        dryRun: isDryRun,
+        status: "SUCCESS",
+        activityId,
+        stagesAdvancedCount: results.length,
+        stagesAdvanced: results,
+        completion: closeRes,
+        message: `Se avanzaron dinámicamente ${results.length} etapas y se completó formalmente la actividad ${activityId}.`,
+      };
     }
 
     return {

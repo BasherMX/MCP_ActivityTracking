@@ -12,6 +12,7 @@ import { reportService } from "../services/report-service.js";
 import { authManager } from "../services/auth-manager.js";
 import { inferActivityMetadata, formatStandardizedTitle, resolveResponsibleFromText, cleanEmailOrTicketText } from "../utils/nlp-resolver.js";
 import { env } from "../config/env.js";
+import { getCurrentSession } from "../services/session-context.js";
 
 
 // ============================================================================
@@ -42,7 +43,7 @@ export const GetSprintWorkItemsSchema = z.object({
   assignedTo: z
     .string()
     .optional()
-    .describe('Filtro opcional por nombre o usuario asignado (ej. "brayan").'),
+    .describe('Filtro opcional por nombre o usuario asignado.'),
 });
 
 export const SyncSprintsSchema = z.object({
@@ -77,7 +78,7 @@ export const GetMyActivitiesSchema = z.object({
   responsibleName: z
     .string()
     .optional()
-    .describe("Nombre o apellido del responsable (ej. 'Adrian', 'Mariana', 'Brayan') para resolver su ID dinámicamente."),
+    .describe("Nombre o apellido del responsable (ej. 'Adrian', 'Mariana') para resolver su ID dinámicamente."),
   status: z
     .string()
     .default("InProgress")
@@ -103,7 +104,7 @@ export const SearchActivitiesSchema = z.object({
   responsibleName: z
     .string()
     .optional()
-    .describe("Filtro opcional por nombre o apellido del responsable (ej. 'Roberto Carlos', 'Adrian', 'Brayan')."),
+    .describe("Filtro opcional por nombre o apellido del responsable (ej. 'Roberto Carlos', 'Adrian')."),
   status: z
     .string()
     .default("All")
@@ -168,7 +169,7 @@ export const CreateMeetingSchema = z.object({
   durationMinutes: z.number().int().positive().default(30).describe("Duración en minutos (ej. 30, 60)."),
   location: z.string().default("Oficina / Teams").describe("Ubicación o enlace de Teams."),
   type: z.number().int().default(0).describe("Tipo de reunión (0 = Internal, 1 = Client, 2 = Planning, 3 = Review, 4 = Retrospective, 5 = Other)."),
-  attendeeIds: z.array(z.number().int()).optional().describe("IDs de responsables asistentes (ej. [6, 31])."),
+  attendeeIds: z.array(z.number().int()).optional().describe("IDs de responsables asistentes (ej. [12, 31])."),
   activityKey: z.string().optional().describe("Clave de la actividad asociada."),
   dryRun: z.boolean().default(true).describe("Modo simulación de seguridad."),
 });
@@ -254,8 +255,8 @@ export const CreateActivitySchema = z.object({
     .describe("Prioridad de la actividad (Low, Medium, High)."),
   status: z
     .string()
-    .default("InProgress")
-    .describe("Estado inicial (InProgress, Pending, Completed). Si se indica Completed, se establece el avance al 100% y la fecha de cierre automáticamente."),
+    .optional()
+    .describe("LEGACY/INFORMATIVO: En backend v3.11+, el estado nace siempre como Pending y pasa automáticamente a InProgress al avanzar etapas o a Completed al concluir."),
   autoComplete: z
     .boolean()
     .default(false)
@@ -300,13 +301,13 @@ export const UpdateActivitySchema = z.object({
   status: z
     .string()
     .optional()
-    .describe("Nuevo estado (Pending, InProgress, Completed, Cancelled)."),
+    .describe("LEGACY: El estado ya no se edita vía update; use track_close_activity, track_cancel_activity, track_reopen_activity o track_advance_process_stage."),
   progressPercentage: z
     .number()
     .min(0)
     .max(100)
     .optional()
-    .describe("Porcentaje de avance (0-100)."),
+    .describe("LEGACY: El progreso ya no se edita vía update; se calcula automáticamente sumando progressDelta en track_log_work_hours."),
   responsibleId: z
     .number()
     .int()
@@ -315,7 +316,7 @@ export const UpdateActivitySchema = z.object({
   responsibleName: z
     .string()
     .optional()
-    .describe("Nombre o apellidos del responsable (ej. 'Adrian', 'Brayan'). Se resuelve dinámicamente si se omite responsibleId."),
+    .describe("Nombre o apellidos del responsable (ej. 'Adrian', 'Mariana'). Se resuelve dinámicamente si se omite responsibleId."),
   projectId: z
     .number()
     .int()
@@ -433,7 +434,7 @@ export const AddObservationSchema = z.object({
   type: z
     .string()
     .default("General")
-    .describe("Tipo de observación o nota (General, Blocker, Agreement, Risk, etc.)."),
+    .describe("Tipo de observación o nota (General, Blocker, Agreement, Risk, Resolución, etc.). Nota: En backend v3.11+, el tipo 'Progreso' fue reemplazado por 'Resolución' para resolver bloqueadores."),
   content: z.string().min(1).describe("Contenido o texto de la observación/nota."),
   collaboratorId: z
     .number()
@@ -455,16 +456,39 @@ export const CloseActivitySchema = z.object({
   id: z
     .union([z.number().int(), z.string()])
     .describe("ID numérico o clave de la actividad que se concluye (ej. 9758 o 'CI095')."),
-  actualHours: z
-    .number()
-    .positive()
-    .optional()
-    .describe("Horas reales dedicadas a la tarea."),
-  completionNotes: z
+  notes: z
     .string()
     .optional()
-    .describe("Resumen de cierre o entregables."),
+    .describe("Resumen de cierre o notas de entregables de la actividad."),
+  actualCompletionDate: z
+    .string()
+    .optional()
+    .describe("Fecha real de finalización en formato ISO 8601 o YYYY-MM-DD (por defecto momento actual)."),
   dryRun: z.boolean().default(true).describe("Modo simulación de seguridad."),
+});
+
+export const CancelActivitySchema = z.object({
+  id: z
+    .union([z.number().int(), z.string()])
+    .describe("ID numérico o clave de la actividad a cancelar (ej. 9758 o 'CI095')."),
+  reason: z
+    .string()
+    .optional()
+    .describe("Motivo opcional o justificación de la cancelación de la actividad."),
+  dryRun: z.boolean().default(true).describe("Modo simulación de seguridad."),
+});
+
+export const ReopenActivitySchema = z.object({
+  id: z
+    .union([z.number().int(), z.string()])
+    .describe("ID numérico o clave de la actividad a reabrir (ej. 9758 o 'CI095')."),
+  dryRun: z.boolean().default(true).describe("Modo simulación de seguridad."),
+});
+
+export const GetCurrentProcessStageSchema = z.object({
+  activityId: z
+    .union([z.number().int(), z.string()])
+    .describe("ID numérico o clave de la actividad para consultar su etapa activa en curso (ej. 9758 o 'CI095')."),
 });
 
 export const LogWorkHoursSchema = z.object({
@@ -489,6 +513,10 @@ export const LogWorkHoursSchema = z.object({
     .string()
     .optional()
     .describe("Detalle de tareas o commits correspondientes a estas horas."),
+  progressDelta: z
+    .number()
+    .optional()
+    .describe("Avance o retroceso porcentual en la actividad (ej. +25 para sumar 25%, -10 para restar). El backend acumula y acota automáticamente el Progreso entre 0 y 100%."),
   responsibleId: z
     .number()
     .int()
@@ -675,7 +703,7 @@ export function getToolDefinitions() {
     {
       name: "track_get_my_activities",
       description:
-        "Consulta las actividades asignadas en el sistema a cualquier responsable o al usuario autenticado (responsibleId: 6). Operación 100% de LECTURA segura.",
+        "Consulta las actividades asignadas en el sistema a cualquier responsable o al usuario autenticado en la sesión. Operación 100% de LECTURA segura.",
       inputSchema: toJsonSchemaClean(GetMyActivitiesSchema),
     },
     {
@@ -753,7 +781,7 @@ export function getToolDefinitions() {
     {
       name: "track_create_activity",
       description:
-        "Registra una nueva actividad. Si no se indican projectId o serviceId, los resuelve DINÁMICAMENTE de la lista en tiempo real de la API. ADVERTENCIA: si se omiten responsibleId Y responsibleName, la actividad se asigna por defecto a responsibleId=6 (no al usuario autenticado) — pasa siempre responsibleId explícito. Para 'Diseño' usa el valor 'Desing' (typo oficial del backend), no 'Design'. Si pasas productId, verifica que su serviceId coincida o la API rechazará la creación. SEGURIDAD: Modo Dry-Run activo por defecto.",
+        "Registra una nueva actividad. Por defecto se asigna automáticamente al usuario actualmente autenticado en la sesión (a menos que se especifique explícitamente otro responsable mediante responsibleId o responsibleName). Si no se indican projectId o serviceId, los resuelve DINÁMICAMENTE de la lista en tiempo real de la API. Para 'Diseño' usa el valor 'Desing' (typo oficial del backend), no 'Design'. Si pasas productId, verifica que su serviceId coincida o la API rechazará la creación. SEGURIDAD: Modo Dry-Run activo por defecto.",
       inputSchema: toJsonSchemaClean(CreateActivitySchema),
     },
     {
@@ -765,8 +793,26 @@ export function getToolDefinitions() {
     {
       name: "track_close_activity",
       description:
-        "Concluye y cierra una actividad marcándola al 100% y estado Completed. IMPORTANTE: esta tool NO avanza las etapas del proceso del producto ni registra responsables/tiempo por etapa. Si la actividad tiene productApplicable:true con flujo de etapas configurado, avanza primero cada etapa con track_advance_process_stage (idealmente advanceAll:true) asignando responsable, y registra las horas con track_log_work_hours usando el stageProgressId resultante, antes o en vez de llamar a esta tool. SEGURIDAD: Modo Dry-Run activo por defecto.",
+        "Concluye y cierra formalmente una actividad invocando la acción oficial de cierre de etapas (complete) del backend. Cierra la etapa activa final y marca automáticamente la actividad como Completed. Si la actividad aún tiene etapas intermedias pendientes, deben avanzarse primero con track_advance_process_stage antes de invocar esta herramienta. SEGURIDAD: Modo Dry-Run activo por defecto.",
       inputSchema: toJsonSchemaClean(CloseActivitySchema),
+    },
+    {
+      name: "track_cancel_activity",
+      description:
+        "Cancela una actividad en curso cerrando la etapa activa sin marcar la actividad como completada (pasa a estado Cancelled). Permite registrar un motivo opcional de cancelación. SEGURIDAD: Modo Dry-Run activo por defecto.",
+      inputSchema: toJsonSchemaClean(CancelActivitySchema),
+    },
+    {
+      name: "track_reopen_activity",
+      description:
+        "Reabre una actividad previamente completada o cancelada. Reabre la última etapa cerrada y regresa el estado de la actividad a InProgress (o Pending si no hubo etapas). SEGURIDAD: Modo Dry-Run activo por defecto.",
+      inputSchema: toJsonSchemaClean(ReopenActivitySchema),
+    },
+    {
+      name: "track_get_current_process_stage",
+      description:
+        "Consulta directamente la etapa del proceso actualmente activa de una actividad (devuelve stageProgressId, stageId, nombre de etapa, orden, responsable asignado y horas reales acumuladas). Operación 100% LECTURA.",
+      inputSchema: toJsonSchemaClean(GetCurrentProcessStageSchema),
     },
     {
       name: "track_delete_activity",
@@ -1057,7 +1103,7 @@ export async function handleToolCall(
           authenticatedUser: {
             id: authManager.getResponsibleId(),
             fullName: authManager.getResponsibleName(),
-            username: env.AUTH_USERNAME,
+            username: getCurrentSession()?.username || env.AUTH_USERNAME || "usuario.sesion",
             defaultServiceId: authManager.getDefaultServiceId(),
             details: user
           }
@@ -1067,7 +1113,7 @@ export async function handleToolCall(
       summary.authenticatedUser = {
         id: authManager.getResponsibleId(),
         fullName: authManager.getResponsibleName(),
-        username: env.AUTH_USERNAME,
+        username: getCurrentSession()?.username || env.AUTH_USERNAME || "usuario.sesion",
         defaultServiceId: authManager.getDefaultServiceId(),
       };
       return summary;
@@ -1114,7 +1160,7 @@ export async function handleToolCall(
         }
       }
       if (!targetResponsibleId) {
-        targetResponsibleId = authManager.getResponsibleId() || inferred.responsibleId;
+        targetResponsibleId = authManager.getResponsibleId();
       }
 
       const cleanedDescription = cleanEmailOrTicketText(parsed.description);
@@ -1129,8 +1175,6 @@ export async function handleToolCall(
         serviceId: parsed.serviceId || inferred.serviceId,
         type: parsed.type || inferred.type,
         priority: parsed.priority || inferred.priority,
-        status: isCompleted ? "Completed" : parsed.status,
-        progressPercentage: isCompleted ? 100 : 0,
         estimatedHours: parsed.estimatedHours || inferred.estimatedHours || 2.0,
         estimatedStartDate: parsed.estimatedStartDate,
         estimatedDeliveryDate: parsed.estimatedDeliveryDate,
@@ -1154,12 +1198,13 @@ export async function handleToolCall(
             targetResponsibleId,
             "Avance automático de etapas al crear/completar actividad",
             parsed.dryRun,
-            parsed.productId
+            parsed.productId,
+            parsed.autoComplete // Concluir formalmente al completar la última etapa
           );
           return {
             ...creationResult,
             stageAdvancement: stageAdvanceResult,
-            message: `${creationResult.message || ''} Etapas de proceso avanzadas automáticamente.`,
+            message: `${creationResult.message || ''} Etapas de proceso avanzadas ${parsed.autoComplete ? 'y actividad completada ' : ''}automáticamente.`,
           };
         }
       }
@@ -1193,8 +1238,6 @@ export async function handleToolCall(
 
       const updateData: any = {
         description: parsed.description,
-        status: isCompleted ? "Completed" : parsed.status,
-        progressPercentage: isCompleted ? 100 : parsed.progressPercentage,
         responsibleId: targetResponsibleId,
         projectId: targetProjectId,
         serviceId: parsed.serviceId,
@@ -1225,7 +1268,7 @@ export async function handleToolCall(
         const numericId = await activityService.resolveNumericActivityId(parsed.id);
         const stageAdvanceResult = await activityService.advanceAllProcessStages(
           numericId,
-          targetResponsibleId || env.DEFAULT_RESPONSIBLE_ID,
+          targetResponsibleId || authManager.getResponsibleId(),
           "Avance automático de etapas al actualizar actividad",
           parsed.dryRun,
           parsed.productId
@@ -1297,10 +1340,32 @@ export async function handleToolCall(
       const parsed = CloseActivitySchema.parse(args || {});
       return await activityService.closeActivity(
         parsed.id,
-        parsed.actualHours,
-        parsed.completionNotes,
+        parsed.notes,
+        parsed.actualCompletionDate,
         parsed.dryRun,
       );
+    }
+
+    case "track_cancel_activity": {
+      const parsed = CancelActivitySchema.parse(args || {});
+      return await activityService.cancelActivity(
+        parsed.id,
+        parsed.reason,
+        parsed.dryRun,
+      );
+    }
+
+    case "track_reopen_activity": {
+      const parsed = ReopenActivitySchema.parse(args || {});
+      return await activityService.reopenActivity(
+        parsed.id,
+        parsed.dryRun,
+      );
+    }
+
+    case "track_get_current_process_stage": {
+      const parsed = GetCurrentProcessStageSchema.parse(args || {});
+      return await activityService.getCurrentProcessStage(parsed.activityId);
     }
 
     case "track_delete_activity": {
@@ -1318,6 +1383,7 @@ export async function handleToolCall(
           hoursWorked: parsed.hoursWorked,
           workDate: parsed.workDate,
           notes: parsed.notes,
+          progressDelta: parsed.progressDelta,
           responsibleId: parsed.responsibleId,
         },
         parsed.dryRun,

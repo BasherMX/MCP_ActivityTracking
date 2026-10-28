@@ -236,7 +236,7 @@ class AuthManager {
     if (info && typeof info.id === 'number' && info.id > 0) {
       return info.id;
     }
-    return env.DEFAULT_RESPONSIBLE_ID || 6;
+    return env.DEFAULT_RESPONSIBLE_ID || 0;
   }
 
   /**

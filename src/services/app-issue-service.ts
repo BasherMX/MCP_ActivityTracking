@@ -56,6 +56,7 @@ export class AppIssueService {
     data: CreateAppIssueDto,
     dryRun = true,
   ): Promise<any> {
+    await authManager.getValidToken();
     const isDryRun = dryRun !== undefined ? dryRun : env.DRY_RUN_MODE;
     const currentResponsibleId = authManager.getResponsibleId();
     const currentResponsibleName = authManager.getResponsibleName();
@@ -111,6 +112,7 @@ export class AppIssueService {
     data: UpdateAppIssueStatusDto,
     dryRun = true,
   ): Promise<any> {
+    await authManager.getValidToken();
     const isDryRun = dryRun !== undefined ? dryRun : env.DRY_RUN_MODE;
 
     if (isDryRun) {

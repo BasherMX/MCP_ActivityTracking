@@ -31,15 +31,16 @@ export class IncidenceService {
    * Consulta las incidencias registradas en el sistema.
    */
   public async getIncidencias(
-    responsibleId = 6,
+    responsibleId?: number,
     year?: number,
     month?: number
   ): Promise<IncidenciaDto[]> {
     await authManager.getValidToken();
 
     try {
-      logger.info(`Consultando incidencias para el responsable ${responsibleId}...`);
-      const params: Record<string, any> = { responsibleId };
+      const targetResponsibleId = responsibleId || authManager.getResponsibleId();
+      logger.info(`Consultando incidencias para el responsable ${targetResponsibleId}...`);
+      const params: Record<string, any> = { responsibleId: targetResponsibleId };
       if (year) params.year = year;
       if (month) params.month = month;
 
@@ -61,10 +62,11 @@ export class IncidenceService {
     data: CreateIncidenciaDto,
     dryRun = true
   ): Promise<any> {
+    await authManager.getValidToken();
     const isDryRun = dryRun !== undefined ? dryRun : env.DRY_RUN_MODE;
 
     const payload = {
-      responsibleId: data.responsibleId ?? 6,
+      responsibleId: data.responsibleId || authManager.getResponsibleId(),
       type: data.type,
       startDate: data.startDate,
       endDate: data.endDate,
@@ -94,6 +96,7 @@ export class IncidenceService {
    * Elimina una incidencia por su ID.
    */
   public async deleteIncidencia(id: number, dryRun = true): Promise<any> {
+    await authManager.getValidToken();
     const isDryRun = dryRun !== undefined ? dryRun : env.DRY_RUN_MODE;
 
     if (isDryRun) {

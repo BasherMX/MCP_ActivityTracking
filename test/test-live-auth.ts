@@ -24,9 +24,9 @@ async function main() {
       console.error('Error consultando sprint:', e.message);
     }
 
-    console.log('\n--- Probando consulta real de actividades asignadas a Brayan ---');
+    console.log('\n--- Probando consulta real de actividades asignadas al usuario autenticado ---');
     try {
-      const acts = await activityService.getMyActivities(6, 'All');
+      const acts = await activityService.getMyActivities(undefined, 'All');
       console.log('Total de actividades encontradas:', acts.length);
       if (acts.length > 0) {
         console.log('Primeras 3 actividades:');

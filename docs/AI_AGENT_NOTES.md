@@ -67,18 +67,21 @@ En modo real, si la actividad usa flujo de etapas, la API exige
 para el registro en modo real"). Un dry-run exitoso **no** garantiza que el real
 funcione — hay que obtener el `stageProgressId` primero (ver sección 1).
 
-## 4. `track_create_activity`: responsable por defecto
+## 4. Asignación automática al usuario autenticado (sin IDs fijos)
 
-`DEFAULT_RESPONSIBLE_ID` (en `src/config/env.ts`) vale `6`
-(VAZQUEZ HEREDIA BRAYAN ULISES). Si se crea una actividad sin `responsibleId`
-ni `responsibleName`, queda asignada a esa persona, no al usuario autenticado.
-Pasar siempre `responsibleId` explícito al crear actividades para otra persona
-(o para uno mismo, si el usuario autenticado no coincide con el default).
+Todas las actividades, incidencias, registros de horas, avances de etapa y observaciones se asignan automáticamente al usuario autenticado en la sesión activa (`authManager.getResponsibleId()`).
+NO existen usuarios ni IDs fijados por omisión (se eliminó cualquier fallback rígido al usuario ID 6).
+Para crear o asignar una actividad o etapa a uno mismo, basta con omitir `responsibleId` y `responsibleName` (o usar "yo").
+Únicamente se debe pasar un `responsibleId` o `responsibleName` explícito cuando el usuario indique explícitamente que desea asignarle algo a una persona distinta a él.
 
-Caso real: una actividad se creó sin `responsibleId` y quedó asignada a Brayan;
-se corrigió eliminando (`track_delete_activity`) y recreando con
-`responsibleId` explícito — porque `track_update_activity` no garantiza poder
-reasignar/corregir ciertos campos de forma confiable en todas las instalaciones.
+
+
+
+
+
+
+
+
 
 ## 5. Catálogo de tipos: "Desing" (typo oficial)
 
@@ -88,7 +91,7 @@ reasignar/corregir ciertos campos de forma confiable en todas las instalaciones.
 Verifica el catálogo de tipos."), aunque el dry-run lo acepta sin validar contra
 catálogo real. Usar siempre `"Desing"` para la categoría de diseño.
 
-## 6. Servicio/producto inconsistente
+## 7. Servicio/producto inconsistente
 
 Si se pasa `productId` de un servicio distinto al que se resuelve dinámicamente
 a partir de `type`/`projectId`, la API rechaza con: "El producto X pertenece al
@@ -96,7 +99,7 @@ servicio Y, no al servicio Z". Solución: pasar `serviceId` explícito que
 coincida con el servicio real del producto (consultable vía
 `track_get_catalogs`).
 
-## 7. `type` no es editable de forma confiable después de creación
+## 8. `type` no es editable de forma confiable después de creación
 
 En una instalación de este conector probada en producción, el schema de
 `track_update_activity` expuesto al cliente IA **no incluía el campo `type`**
@@ -111,7 +114,7 @@ original. **Pedir confirmación explícita al usuario antes de borrar una
 actividad para cambiarle el tipo**, y preferir dejarlo así si existen horas de
 colaboradores asociadas.
 
-## 8. `track_get_my_activities`: sin filtro de rango de fechas
+## 9. `track_get_my_activities`: sin filtro de rango de fechas
 
 La tool no acepta rango de fechas; con `status: "All"` en responsables con
 mucho historial, la respuesta puede exceder el límite de tokens del cliente y

@@ -1,6 +1,7 @@
 import { ActivityType, FALLBACK_ACTIVITY_TYPES } from '../config/constants.js';
 import { ProjectDto, ServiceDto, ResponsibleDto } from '../types/openapi.js';
 import { env } from '../config/env.js';
+import { authManager } from '../services/auth-manager.js';
 
 export interface InferredActivityData {
   projectId: number;
@@ -21,10 +22,13 @@ export interface InferredActivityData {
 export function resolveResponsibleFromText(
   text: string,
   liveResponsibles: ResponsibleDto[],
-  defaultResponsibleId = env.DEFAULT_RESPONSIBLE_ID
+  defaultResponsibleId?: number,
+  defaultResponsibleName?: string
 ): { id: number; name: string } {
   if (!liveResponsibles || liveResponsibles.length === 0) {
-    return { id: defaultResponsibleId, name: env.DEFAULT_RESPONSIBLE_NAME };
+    const fallbackId = defaultResponsibleId ?? authManager.getResponsibleId();
+    const fallbackName = defaultResponsibleName ?? authManager.getResponsibleName();
+    return { id: fallbackId, name: fallbackName };
   }
 
   const lower = text.toLowerCase().trim();
@@ -63,8 +67,13 @@ export function resolveResponsibleFromText(
   }
 
   // Fallback al responsable predeterminado
-  const defaultResp = liveResponsibles.find(r => r.id === defaultResponsibleId) || liveResponsibles[0];
-  return { id: defaultResp.id, name: defaultResp.fullName || env.DEFAULT_RESPONSIBLE_NAME };
+  const fallbackId = defaultResponsibleId ?? authManager.getResponsibleId();
+  const fallbackName = defaultResponsibleName ?? authManager.getResponsibleName();
+  const defaultResp = liveResponsibles.find(r => r.id === fallbackId);
+  if (defaultResp) {
+    return { id: defaultResp.id, name: defaultResp.fullName || fallbackName };
+  }
+  return { id: fallbackId, name: fallbackName };
 }
 
 /**

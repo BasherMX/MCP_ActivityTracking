@@ -17,27 +17,40 @@ async function runDryRunTests() {
   console.log('\n=== TEST 3: track_update_activity (Dry-Run) ===');
   const resUpdate = await handleToolCall('track_update_activity', {
     id: 105,
-    status: 'InProgress',
-    progressPercentage: 75,
-    notes: 'Avance al 75% tras pruebas unitarias',
+    notes: 'Avance tras pruebas unitarias y actualización de notas',
     dryRun: true,
   });
   console.log('Resultado Update (Dry-Run):', JSON.stringify(resUpdate, null, 2));
 
-  console.log('\n=== TEST 4: track_close_activity (Dry-Run) ===');
+  console.log('\n=== TEST 4: track_close_activity (Dry-Run via Stage Complete) ===');
   const resClose = await handleToolCall('track_close_activity', {
     id: 105,
-    actualHours: 4.0,
-    completionNotes: 'Tarea completada satisfactoriamente y testeada.',
+    notes: 'Tarea completada satisfactoriamente y testeada.',
     dryRun: true,
   });
   console.log('Resultado Close (Dry-Run):', JSON.stringify(resClose, null, 2));
 
-  console.log('\n=== TEST 5: track_log_work_hours (Dry-Run) ===');
+  console.log('\n=== TEST 4.1: track_cancel_activity (Dry-Run via Stage Cancel) ===');
+  const resCancel = await handleToolCall('track_cancel_activity', {
+    id: 105,
+    reason: 'Cambio de alcance decidido en reunión de refinamiento',
+    dryRun: true,
+  });
+  console.log('Resultado Cancel (Dry-Run):', JSON.stringify(resCancel, null, 2));
+
+  console.log('\n=== TEST 4.2: track_reopen_activity (Dry-Run via Stage Reopen) ===');
+  const resReopen = await handleToolCall('track_reopen_activity', {
+    id: 105,
+    dryRun: true,
+  });
+  console.log('Resultado Reopen (Dry-Run):', JSON.stringify(resReopen, null, 2));
+
+  console.log('\n=== TEST 5: track_log_work_hours con progressDelta (Dry-Run) ===');
   const resLog = await handleToolCall('track_log_work_hours', {
     activityId: 105,
     hoursWorked: 2.5,
-    notes: 'Commits de desarrollo y resolución de conflictos',
+    progressDelta: 20,
+    notes: 'Commits de desarrollo y resolución de conflictos (+20% avance)',
     dryRun: true,
   });
   console.log('Resultado Log Hours (Dry-Run):', JSON.stringify(resLog, null, 2));
@@ -51,11 +64,11 @@ async function runDryRunTests() {
   });
   console.log('Resultado URL Evidence (Dry-Run):', JSON.stringify(resUrl, null, 2));
 
-  console.log('\n=== TEST 7: track_add_observation (con createdBy automático) ===');
+  console.log('\n=== TEST 7: track_add_observation (con Resolución y createdBy dinámico) ===');
   const resObs = await handleToolCall('track_add_observation', {
     activityId: 105,
-    type: 'Agreement',
-    content: 'Acuerdo técnico de entrega de formatos de servicios',
+    type: 'Resolución',
+    content: 'Se resolvió el bloqueo en pipeline de CI/CD tras actualizar variables de entorno',
     dryRun: true,
   });
   console.log('Resultado Add Observation (Dry-Run):', JSON.stringify(resObs, null, 2));
@@ -89,8 +102,8 @@ async function runDryRunTests() {
 
   console.log('\n=== TEST 11: track_get_catalogs (Lectura de Catálogos) ===');
   const resCat = await handleToolCall('track_get_catalogs', { catalog: 'all' });
-  console.log('Catálogos Proyectos:', resCat.projects.map((p: any) => `${p.id}: ${p.name} (${p.prefix})`));
-  console.log('Catálogos Servicios:', resCat.services.map((s: any) => `${s.id}: ${s.name}`));
+  console.log('Catálogos Proyectos:', resCat.projects?.map((p: any) => `${p.id}: ${p.name} (${p.prefix})`));
+  console.log('Catálogos Servicios:', resCat.services?.map((s: any) => `${s.id}: ${s.name}`));
 
   console.log('\n>>> TODOS LOS TESTS DE DRY-RUN Y ESQUEMAS COMPLETADOS CON ÉXITO <<<');
 }

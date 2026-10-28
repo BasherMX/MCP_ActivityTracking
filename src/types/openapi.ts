@@ -1,5 +1,6 @@
 /**
- * Tipos TypeScript mapeados directamente desde la especificación OpenAPI (Activity-Tracking.json)
+ * Tipos TypeScript mapeados directamente desde la especificación OpenAPI (swagger.json)
+ * Actualizado para soporte de Flujo por Etapas (v3.11.0 - v3.13.0)
  */
 
 export interface AuthenticateDto {
@@ -27,10 +28,8 @@ export interface ResponsibleDto {
 
 export interface CreateActivityDto {
   description?: string | null;
-  status?: string | null;
   type?: string | null;
   priority?: string | null;
-  progressPercentage?: number;
   registrationDate?: string | null;
   estimatedStartDate?: string | null;
   actualStartDate?: string | null;
@@ -50,10 +49,8 @@ export interface CreateActivityDto {
 
 export interface UpdateActivityDto {
   description?: string | null;
-  status?: string | null;
   type?: string | null;
   priority?: string | null;
-  progressPercentage?: number;
   registrationDate?: string | null;
   estimatedStartDate?: string | null;
   actualStartDate?: string | null;
@@ -68,6 +65,40 @@ export interface UpdateActivityDto {
   productApplicable?: boolean;
   productId?: number | null;
   sprintId?: number | null;
+}
+
+export interface CompleteActivityDto {
+  actualCompletionDate?: string | null;
+  notes?: string | null;
+}
+
+export interface CancelActivityDto {
+  reason?: string | null;
+}
+
+export interface StageCollaboratorDto {
+  id: number;
+  stageProgressId: number;
+  responsibleId: number;
+  responsibleName?: string | null;
+  assignedAt: string;
+}
+
+export interface ActivityStageProgressDto {
+  id: number;
+  activityId: number;
+  stageId: number;
+  stageName?: string | null;
+  stageOrder: number;
+  assignedToId?: number | null;
+  assignedToName?: string | null;
+  startedAt: string;
+  completedAt?: string | null;
+  isActive: boolean;
+  notes?: string | null;
+  actualHours?: number | null;
+  iterationNumber: number;
+  collaborators?: StageCollaboratorDto[] | null;
 }
 
 export interface ActivityListDto {
@@ -140,6 +171,7 @@ export interface CreateStageWorkEntryDto {
   workDate: string;
   hoursWorked: number;
   notes?: string | null;
+  progressDelta?: number | null;
 }
 
 export interface StageWorkEntryDto {
@@ -150,6 +182,7 @@ export interface StageWorkEntryDto {
   workDate: string;
   hoursWorked: number;
   notes?: string | null;
+  progressDelta?: number | null;
   createdAt: string;
   isRetroactive?: boolean;
   retroactiveDays?: number;
@@ -262,4 +295,3 @@ export interface CatalogItemDto {
   name?: string | null;
   displayName?: string | null;
 }
-

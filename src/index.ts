@@ -23,8 +23,10 @@ const AGENT_INSTRUCTIONS = `INSTRUCCIONES OPERATIVAS PARA ASISTENTES DE IA — A
 
 Seguridad: toda operación de escritura (create/update/delete/advance/log/attach) tiene dryRun=true por defecto. Ejecuta primero en dry-run, valida el resultado, y solo entonces repite con dryRun:false.
 
-1) IDENTIDAD DEL USUARIO ACTIVO ("yo", "mi persona"):
-   Cuando el usuario se refiera a sí mismo ("crea una actividad para mí", "mis actividades", "mis horas"), interpreta "yo" como el usuario autenticado dinámicamente en la sesión actual. No recurras a valores fijos arbitrarios.
+1) IDENTIDAD DEL USUARIO ACTIVO Y ASIGNACIONES (REGLA FUNDAMENTAL):
+   - Toda actividad, incidencia, registro de horas, avance de etapa, observación o reunión debe generarse y asignarse por defecto al usuario autenticado en la sesión activa. Omite 'responsibleId', 'responsibleName' y 'assignedToId' para que el sistema resuelva automáticamente la identidad del usuario logueado.
+   - NUNCA asumas ni fijes un ID o responsable por omisión (en particular, NUNCA asumas ID 6 ni 'Brayan Vázquez').
+   - ÚNICAMENTE asigna o crea algo para una persona distinta si el usuario logueado lo instruye explícitamente (ej. "asígnala a Adrián García" o "créale una actividad a Mariana").
 
 2) REDACCIÓN Y TÍTULOS DE ACTIVIDADES:
    - No antepongas artificialmente verbos redundantes como "Desarrollar" si el usuario ya proporcionó una descripción estructurada del objetivo.
@@ -42,8 +44,16 @@ Seguridad: toda operación de escritura (create/update/delete/advance/log/attach
    - Apoyo total en una etapa: usa track_add_stage_collaborator({ progressId, responsibleId }) para registrar formalmente al colaborador en la etapa.
    - Apoyo parcial en una etapa (ej. 15 minutos): registra las horas con track_log_work_hours indicando el stageProgressId y la bandera isSupport: true.
 
-5) CIERRE DE ACTIVIDADES CON PRODUCTO (productApplicable:true):
-   track_close_activity SOLO marca status=Completed. Si la actividad tiene producto con etapas, NUNCA la cierres sin antes asegurar que se avanzaron todas las etapas y se registraron las horas por etapa.
+5) CICLO DE VIDA, ESTADO Y PROGRESO DE ACTIVIDADES (v3.11 - v3.13):
+   - El Estado y el % de Progreso de una actividad NUNCA se editan a mano. El backend los calcula automáticamente:
+     a) Al crear, la actividad nace automáticamente en estado 'Pending' (0% de avance).
+     b) Al avanzar etapas (track_advance_process_stage), el estado pasa automáticamente a 'InProgress'.
+     c) Para reportar avance de progreso %, envía 'progressDelta' (ej. +25 para sumar 25%, -10 para restar) en track_log_work_hours.
+     d) Para cerrar formalmente la actividad, usa track_close_activity (invoca 'complete' en backend). Cierra la etapa final activa y marca status='Completed'.
+     e) Para cancelar una actividad en curso, usa track_cancel_activity (con motivo opcional). Cierra la etapa activa sin marcar la actividad como completada (status='Cancelled').
+     f) Para reabrir una actividad completada o cancelada, usa track_reopen_activity (reabre la última etapa cerrada y regresa a InProgress/Pending).
+     g) Para conocer la etapa activa en curso y su stageProgressId inmediato para registrar horas, usa track_get_current_process_stage.
+     h) En observaciones (track_add_observation), el tipo 'Progreso' fue retirado y reemplazado por 'Resolución' para resolver bloqueadores.
 
 6) REPORTES Y CAPACIDAD:
    - Para consultar el resumen diario real consolidado usa track_get_daily_report.
@@ -180,7 +190,7 @@ async function main() {
   logger.info(`Modo de Transporte: ${transportMode.toUpperCase()}`);
   logger.info(`Endpoint API: ${env.API_BASE_URL}`);
   logger.info(`Modo Dry-Run: ${env.DRY_RUN_MODE ? 'ACTIVO (Seguro para Producción)' : 'INACTIVO'}`);
-  logger.info(`Usuario institucional por defecto: ${env.AUTH_USERNAME}`);
+  logger.info(`Usuario institucional por defecto: ${env.AUTH_USERNAME || '(Autenticación por sesión activa)'}`);
   logger.info('====================================================');
 
   // Iniciar servidor HTTP/SSE si aplica

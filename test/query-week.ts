@@ -13,15 +13,15 @@ async function main() {
 
   // 1. Balance de horas
   try {
-    const metrics = await timesheetService.getWorkBalanceMetrics(6, 'current_week');
+    const metrics = await timesheetService.getWorkBalanceMetrics(undefined, 'current_week');
     console.log(`Horas registradas en la semana: ${metrics.hoursWorkedInPeriod} hrs (Meta semanal: ${metrics.targetCapacity} hrs)`);
   } catch (e: any) {
     console.error('Error obteniendo métricas:', e.message);
   }
 
   // 2. Actividades asignadas
-  const allActs = await activityService.getMyActivities(6, 'All');
-  console.log(`\nTotal de actividades históricas de Brayan: ${allActs.length}`);
+  const allActs = await activityService.getMyActivities(undefined, 'All');
+  console.log(`\nTotal de actividades históricas del usuario autenticado: ${allActs.length}`);
 
   // Filtrar actividades con fechas recientes o en progreso
   console.log('\n--- ACTIVIDADES EN PROGRESO Y RECIENTES ---');

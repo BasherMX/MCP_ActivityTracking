@@ -102,6 +102,7 @@ export class TimesheetService {
     data: CreateStageWorkEntryDto & { activityId?: number; stageProgressId?: number },
     dryRun = true
   ): Promise<any> {
+    await authManager.getValidToken();
     const isDryRun = dryRun !== undefined ? dryRun : env.DRY_RUN_MODE;
     const activeRespId = data.responsibleId || authManager.getResponsibleId();
 
@@ -115,6 +116,7 @@ export class TimesheetService {
           hoursWorked: data.hoursWorked,
           workDate: data.workDate,
           notes: data.notes,
+          progressDelta: data.progressDelta,
           responsibleId: activeRespId,
           activityId: data.activityId,
         },
@@ -133,6 +135,7 @@ export class TimesheetService {
       workDate: data.workDate,
       hoursWorked: data.hoursWorked,
       notes: data.notes,
+      progressDelta: data.progressDelta,
     });
     return response.data;
   }
