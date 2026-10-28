@@ -419,8 +419,24 @@ export const AdvanceProcessStageSchema = z.object({
   advanceAll: z
     .boolean()
     .default(false)
-    .describe("Si es true, avanza secuencialmente TODAS las etapas pendientes de la actividad hasta completarla en una sola llamada."),
+    .describe("Si es true, avanza secuencialmente TODAS las etapas pendientes de la actividad."),
   notes: z.string().optional().describe("Notas o comentarios de avance de etapa redactados técnicamente."),
+  progressDelta: z
+    .number()
+    .optional()
+    .describe("Puntos porcentuales de avance a registrar en esta etapa mediante track_log_work_hours (ej. 25 para sumar 25%)."),
+  hoursWorked: z
+    .number()
+    .optional()
+    .describe("Horas trabajadas a registrar en la etapa junto con el avance de progreso (opcional)."),
+  autoDistributeProgress: z
+    .boolean()
+    .default(false)
+    .describe("Si es true (o con completeOnFinish), reparte automáticamente el 100% de progreso entre las etapas que se avancen."),
+  completeOnFinish: z
+    .boolean()
+    .default(false)
+    .describe("Si es true y advanceAll es true, una vez distribuidas las etapas y alcanzado el 100% de progreso, cierra formalmente la actividad."),
   dryRun: z.boolean().default(true).describe("Modo simulación de seguridad. Especifique dryRun: false para ejecutar en producción."),
 });
 
@@ -467,6 +483,10 @@ export const CloseActivitySchema = z.object({
     .string()
     .optional()
     .describe("Fecha real de finalización en formato ISO 8601 o YYYY-MM-DD (por defecto momento actual)."),
+  force: z
+    .boolean()
+    .default(false)
+    .describe("Fuerza el cierre incluso si el progreso acumulado es menor al 100% (NO recomendado). Por defecto false."),
   dryRun: z.boolean().default(true).describe("Modo simulación de seguridad."),
 });
 
@@ -813,7 +833,7 @@ export function getToolDefinitions() {
     {
       name: "track_advance_process_stage",
       description:
-        "Avanza una actividad a una nueva etapa del proceso de producto, registrando responsable (assignedToId) y notas en esa etapa. Con advanceAll:true recorre secuencialmente todas las etapas pendientes. ADVERTENCIA: en modo dry-run con advanceAll:true, si no se pasa productId explícito, siempre reporta '0 etapas avanzadas' aunque en modo real sí existan etapas pendientes — no es un indicador confiable en ese caso. El resultado real de cada avance trae el stageProgressId necesario para track_log_work_hours. SEGURIDAD: Modo Dry-Run activo por defecto.",
+        "Avanza una actividad a una nueva etapa del proceso de producto, registrando responsable (assignedToId) y notas en esa etapa. Soporta progressDelta y hoursWorked para registrar el avance de progreso de esa etapa. Con advanceAll:true recorre secuencialmente todas las etapas pendientes; y con autoDistributeProgress o completeOnFinish reparte automáticamente el 100% de progreso entre las etapas y registra el tiempo. SEGURIDAD: Modo Dry-Run activo por defecto.",
       inputSchema: toJsonSchemaClean(AdvanceProcessStageSchema),
     },
     {
@@ -843,7 +863,7 @@ export function getToolDefinitions() {
     {
       name: "track_close_activity",
       description:
-        "Concluye y cierra formalmente una actividad invocando la acción oficial de cierre de etapas (complete) del backend. Cierra la etapa activa final y marca automáticamente la actividad como Completed. Si la actividad aún tiene etapas intermedias pendientes, deben avanzarse primero con track_advance_process_stage antes de invocar esta herramienta. SEGURIDAD: Modo Dry-Run activo por defecto.",
+        "Concluye y cierra formalmente una actividad invocando la acción oficial de cierre de etapas (complete) del backend. REGLA ESTRICTA: La actividad debe estar al 100% de avance acumulado; si tiene menos del 100%, el cierre es bloqueado para evitar cierres prematuros. SEGURIDAD: Modo Dry-Run activo por defecto.",
       inputSchema: toJsonSchemaClean(CloseActivitySchema),
     },
     {
@@ -1360,18 +1380,44 @@ export async function handleToolCall(
           parsed.assignedToId,
           parsed.notes,
           parsed.dryRun,
+          undefined,
+          parsed.completeOnFinish,
+          parsed.autoDistributeProgress,
+          parsed.hoursWorked,
         );
       }
       if (!parsed.stageId) {
         throw new Error("Debe especificar stageId o pasar advanceAll: true para avanzar automáticamente todas las etapas.");
       }
-      return await activityService.advanceProcessStage(
+      const advanceResult = await activityService.advanceProcessStage(
         numericId,
         parsed.stageId,
         parsed.assignedToId,
         parsed.notes,
         parsed.dryRun,
       );
+
+      let logResult = null;
+      if (parsed.progressDelta !== undefined || parsed.hoursWorked !== undefined) {
+        const stageProgressId = advanceResult?.id;
+        logResult = await timesheetService.logWorkHours(
+          {
+            activityId: numericId,
+            stageProgressId: parsed.dryRun ? undefined : stageProgressId,
+            hoursWorked: parsed.hoursWorked || 1.0,
+            workDate: new Date().toISOString(),
+            notes: parsed.notes || "Avance de etapa y registro de progreso",
+            progressDelta: parsed.progressDelta,
+            responsibleId: parsed.assignedToId,
+          },
+          parsed.dryRun,
+        );
+      }
+
+      return {
+        ...advanceResult,
+        timeAndProgressLog: logResult,
+      };
     }
 
     case "track_get_observations": {
@@ -1399,6 +1445,7 @@ export async function handleToolCall(
         parsed.notes,
         parsed.actualCompletionDate,
         parsed.dryRun,
+        parsed.force,
       );
     }
 

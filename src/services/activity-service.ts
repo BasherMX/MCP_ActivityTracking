@@ -12,6 +12,7 @@ import {
   ActivityStageProgressDto,
 } from "../types/openapi.js";
 import { catalogService } from "./catalog-service.js";
+import { timesheetService } from "./timesheet-service.js";
 import { logger } from "../utils/logger.js";
 
 export class ActivityService {
@@ -426,11 +427,42 @@ export class ActivityService {
     notes?: string,
     actualCompletionDate?: string,
     dryRun = true,
+    force = false,
   ): Promise<any> {
     const id = await this.resolveNumericActivityId(idOrKey);
     await authManager.getValidToken();
     const isDryRun = dryRun !== undefined ? dryRun : env.DRY_RUN_MODE;
     const nowIso = actualCompletionDate || new Date().toISOString();
+
+    let detail: ActivityDto | null = null;
+    try {
+      detail = await this.getActivityDetail(id);
+    } catch (e: any) {
+      logger.warn(`No se pudo consultar detalle previo de la actividad ${id}: ${e?.message}`);
+    }
+
+    const currentProgress = detail?.progressPercentage ?? 0;
+    const activityKey = detail?.activityId || String(id);
+
+    // REGLA INSTITUCIONAL ESTRICTA: La actividad debe tener 100% de avance para poder cerrarse
+    if (detail && currentProgress < 100 && !force) {
+      const blockedMsg = `No es posible cerrar la actividad ${activityKey} ('${detail.description || id}'): su progreso actual es del ${currentProgress}%. Es obligatorio que la actividad esté al 100% de avance para poder cerrarla. Registre tiempo por etapa con 'progressDelta' mediante track_log_work_hours hasta completar el 100%.`;
+      logger.warn(`[VALIDACIÓN BLOQUEADA] ${blockedMsg}`);
+
+      if (isDryRun) {
+        return {
+          dryRun: true,
+          status: "VALIDATION_BLOCKED",
+          activityId: id,
+          activityKey,
+          currentProgress,
+          requiredProgress: 100,
+          error: blockedMsg,
+          message: `[Validación Bloqueada] La actividad tiene ${currentProgress}% de avance acumulado. Para cerrarla debe alcanzar el 100%. Registre avances en las etapas con track_log_work_hours y progressDelta.`,
+        };
+      }
+      throw new Error(blockedMsg);
+    }
 
     const payload: CompleteActivityDto = {
       actualCompletionDate: nowIso,
@@ -446,8 +478,10 @@ export class ActivityService {
         status: "SIMULATION_SUCCESS",
         targetEndpoint: `POST /api/v1/process-stages/activity/${id}/complete`,
         activityId: id,
+        activityKey,
+        currentProgress: detail ? currentProgress : 100,
         appliedChanges: payload,
-        message: `Simulación de cierre exitosa: La actividad ${id} cerrará su etapa activa y el backend la marcará como Completed. Base de datos productiva intacta.`,
+        message: `Simulación de cierre exitosa: La actividad ${activityKey} tiene ${detail ? currentProgress : 100}% de avance (completa), cerrará su etapa activa y el backend la marcará como Completed. Base de datos productiva intacta.`,
       };
     }
 
@@ -638,6 +672,9 @@ export class ActivityService {
 
   /**
    * Avanza secuencialmente TODAS las etapas pendientes de una actividad hasta la etapa final.
+   * Si autoDistributeProgress o completeOnFinish es true, reparte equitativamente el 100% del progreso
+   * (o el porcentaje restante hasta 100%) entre las etapas que se avancen y registra su correspondiente
+   * entrada de tiempo y avance porcentual (progressDelta).
    */
   public async advanceAllProcessStages(
     activityId: number,
@@ -646,6 +683,8 @@ export class ActivityService {
     dryRun = true,
     productId?: number,
     completeOnFinish = false,
+    autoDistributeProgress = false,
+    totalHours?: number,
   ): Promise<any> {
     const isDryRun = dryRun !== undefined ? dryRun : env.DRY_RUN_MODE;
     const effectiveAssignedToId = assignedToId || authManager.getResponsibleId();
@@ -655,15 +694,13 @@ export class ActivityService {
     );
 
     let stages: any[] = [];
+    let detail: ActivityDto | null = null;
     try {
+      detail = await this.getActivityDetail(activityId);
       if (productId) {
         stages = await this.getProcessStagesByProduct(productId);
-      } else {
-        // En simulación o producción real, intentar resolver productId desde el detalle si no se dio explícito
-        const detail = await this.getActivityDetail(activityId);
-        if (detail && detail.productId) {
-          stages = await this.getProcessStagesByProduct(detail.productId);
-        }
+      } else if (detail && detail.productId) {
+        stages = await this.getProcessStagesByProduct(detail.productId);
       }
     } catch {
       // Ignorar fallo al obtener detalle
@@ -678,27 +715,81 @@ export class ActivityService {
       };
     }
 
+    const currentProgress = detail?.progressPercentage ?? 0;
+    const shouldDistribute = autoDistributeProgress || completeOnFinish;
+    const remainingProgress = Math.max(0, 100 - currentProgress);
+
+    // Calcular distribución de progreso entre las etapas a avanzar
+    const stageCount = stages.length;
+    const baseDelta = stageCount > 0 ? Math.floor(remainingProgress / stageCount) : 0;
+    let remainder = stageCount > 0 ? remainingProgress % stageCount : 0;
+
+    // Calcular horas si se especificaron
+    const baseHours = totalHours ? Number((totalHours / stageCount).toFixed(2)) : undefined;
+
     const results = [];
-    for (const stage of stages) {
+    let accumulatedSimulatedProgress = currentProgress;
+
+    for (let i = 0; i < stages.length; i++) {
+      const stage = stages[i];
       const sId = stage.id || stage.stageId;
-      if (sId) {
-        const res = await this.advanceProcessStage(
-          activityId,
-          sId,
-          effectiveAssignedToId,
-          notes || `Avance a etapa: ${stage.name || sId}`,
-          dryRun,
-        );
-        results.push({ stageId: sId, stageName: stage.name, result: res });
+      if (!sId) continue;
+
+      let deltaForStage = 0;
+      if (shouldDistribute) {
+        deltaForStage = baseDelta + (remainder > 0 ? 1 : 0);
+        if (remainder > 0) remainder--;
+        accumulatedSimulatedProgress = Math.min(100, accumulatedSimulatedProgress + deltaForStage);
       }
+
+      const stageNotes = notes || `Avance a etapa: ${stage.name || sId}`;
+      const res = await this.advanceProcessStage(
+        activityId,
+        sId,
+        effectiveAssignedToId,
+        stageNotes,
+        dryRun,
+      );
+
+      let logRes = null;
+      if (shouldDistribute && deltaForStage > 0) {
+        const stageProgressId = res?.id || res?.stageProgressId;
+        const hoursToLog = baseHours || (i === 0 ? 0.5 : 1.0);
+        try {
+          logRes = await timesheetService.logWorkHours(
+            {
+              activityId,
+              stageProgressId: isDryRun ? undefined : stageProgressId,
+              hoursWorked: hoursToLog,
+              workDate: new Date().toISOString(),
+              notes: `Trabajo registrado en etapa '${stage.name || sId}' (+${deltaForStage}% avance)`,
+              progressDelta: deltaForStage,
+              responsibleId: effectiveAssignedToId,
+            },
+            dryRun,
+          );
+        } catch (err: any) {
+          logger.warn(`No se pudo registrar tiempo para etapa ${sId}: ${err?.message}`);
+        }
+      }
+
+      results.push({
+        stageId: sId,
+        stageName: stage.name,
+        progressDelta: deltaForStage,
+        accumulatedProgress: accumulatedSimulatedProgress,
+        advanceResult: res,
+        timeLogResult: logRes,
+      });
     }
 
     if (completeOnFinish) {
       const closeRes = await this.closeActivity(
         activityId,
-        notes || "Conclusión automática de actividad tras avanzar todas las etapas",
+        notes || "Conclusión automática de actividad tras avanzar todas las etapas y alcanzar el 100% de avance",
         undefined,
         dryRun,
+        true, // force = true en este flujo porque ya se distribuyó el 100% de progreso
       );
       return {
         dryRun: isDryRun,
@@ -707,7 +798,8 @@ export class ActivityService {
         stagesAdvancedCount: results.length,
         stagesAdvanced: results,
         completion: closeRes,
-        message: `Se avanzaron dinámicamente ${results.length} etapas y se completó formalmente la actividad ${activityId}.`,
+        finalProgress: accumulatedSimulatedProgress,
+        message: `Se avanzaron dinámicamente ${results.length} etapas, se distribuyó el 100% del progreso y se completó formalmente la actividad ${activityId}.`,
       };
     }
 
@@ -717,7 +809,8 @@ export class ActivityService {
       activityId,
       stagesAdvancedCount: results.length,
       stagesAdvanced: results,
-      message: `Se avanzaron dinámicamente ${results.length} etapas para la actividad ${activityId}.`,
+      finalProgress: accumulatedSimulatedProgress,
+      message: `Se avanzaron dinámicamente ${results.length} etapas para la actividad ${activityId} (progreso acumulado: ${accumulatedSimulatedProgress}%).`,
     };
   }
 

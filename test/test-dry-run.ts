@@ -22,13 +22,21 @@ async function runDryRunTests() {
   });
   console.log('Resultado Update (Dry-Run):', JSON.stringify(resUpdate, null, 2));
 
-  console.log('\n=== TEST 4: track_close_activity (Dry-Run via Stage Complete) ===');
+  console.log('\n=== TEST 4: track_close_activity (Dry-Run con Actividad al 100%) ===');
   const resClose = await handleToolCall('track_close_activity', {
     id: 105,
     notes: 'Tarea completada satisfactoriamente y testeada.',
     dryRun: true,
   });
   console.log('Resultado Close (Dry-Run):', JSON.stringify(resClose, null, 2));
+
+  console.log('\n=== TEST 4.0: track_close_activity (Validación Bloqueada cuando Progreso < 100%) ===');
+  const resCloseBlocked = await handleToolCall('track_close_activity', {
+    id: 13948, // Actividad con 0% de progreso
+    notes: 'Intento de cierre prematuro',
+    dryRun: true,
+  });
+  console.log('Resultado Close Bloqueado (Progreso < 100%):', JSON.stringify(resCloseBlocked, null, 2));
 
   console.log('\n=== TEST 4.1: track_cancel_activity (Dry-Run via Stage Cancel) ===');
   const resCancel = await handleToolCall('track_cancel_activity', {
@@ -50,6 +58,16 @@ async function runDryRunTests() {
     activityId: 105,
   });
   console.log('Resultado Current Process Stage:', JSON.stringify(resCurrentStage, null, 2));
+
+  console.log('\n=== TEST 4.4: track_advance_process_stage (Avanzar Etapas con Reparto de 100% de Progreso) ===');
+  const resAdvanceAllProgress = await handleToolCall('track_advance_process_stage', {
+    activityId: 105,
+    advanceAll: true,
+    autoDistributeProgress: true,
+    completeOnFinish: true,
+    dryRun: true,
+  });
+  console.log('Resultado Advance All con Reparto de Progreso (Dry-Run):', JSON.stringify(resAdvanceAllProgress, null, 2));
 
   console.log('\n=== TEST 5: track_log_work_hours con progressDelta (Dry-Run) ===');
   const resLog = await handleToolCall('track_log_work_hours', {

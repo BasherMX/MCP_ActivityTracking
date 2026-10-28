@@ -12,7 +12,10 @@ A partir de las versiones v3.11 a v3.13 del backend Kestrel, **el Estado y el % 
 - Al crear una actividad nace en estado **`Pending`** con 0% de progreso.
 - Al avanzar de etapa (`track_advance_process_stage`), el estado pasa automáticamente a **`InProgress`** y se fija `actualStartDate`.
 - El progreso porcentual se reporta en cada registro de tiempo (`track_log_work_hours`) enviando el campo **`progressDelta`** (ej. `+25` para sumar 25 puntos porcentuales, o `-10` si retrocedió). El backend recalcula y acota automáticamente la suma acumulada entre 0 y 100%.
-- Para concluir una actividad, se utiliza **`track_close_activity`**, la cual invoca el endpoint oficial del seguimiento por etapas:
+- **Reparto del 100% de progreso al avanzar etapas**: Cuando el usuario solicite avanzar etapas o registrar el avance completo, se debe repartir el 100% de avance entre el total de etapas o tiempos a registrar (ej. si son 4 etapas con registro de tiempo, +25% en cada una; o distribuido entre las etapas activas). Con `track_advance_process_stage({ advanceAll: true, autoDistributeProgress: true })` o `completeOnFinish: true`, el conector reparte el progreso faltante equitativamente y registra las horas correspondientes.
+- **Validación obligatoria para cerrar actividad (100% de avance)**:
+  `track_close_activity` (`POST /api/v1/process-stages/activity/{id}/complete`) **exige de manera estricta que la actividad esté ya al 100% de avance**. Si su progreso actual es menor al 100%, la herramienta bloquea el cierre (`VALIDATION_BLOCKED` en dry-run o error en real) indicando cuánto progreso tiene y cuánto falta por registrar. No se debe intentar cerrar una actividad antes de alcanzar el 100%.
+- Para concluir una actividad una vez alcanzado el 100%, se utiliza **`track_close_activity`**, la cual invoca el endpoint oficial del seguimiento por etapas:
   `POST /api/v1/process-stages/activity/{id}/complete`
   Esto cierra la etapa en curso (que debe ser la de mayor orden) y marca la actividad como **`Completed`**.
 - Para cancelar una actividad en cualquier momento (incluso sin etapa activa), se utiliza **`track_cancel_activity`** (`POST /api/v1/process-stages/activity/{id}/cancel`), la cual cierra la etapa activa sin marcar la actividad como completada (pasa a **`Cancelled`**).

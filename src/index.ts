@@ -48,12 +48,14 @@ Seguridad: toda operación de escritura (create/update/delete/advance/log/attach
    - El Estado y el % de Progreso de una actividad NUNCA se editan a mano. El backend los calcula automáticamente:
      a) Al crear, la actividad nace automáticamente en estado 'Pending' (0% de avance).
      b) Al avanzar etapas (track_advance_process_stage), el estado pasa automáticamente a 'InProgress'.
-     c) Para reportar avance de progreso %, envía 'progressDelta' (ej. +25 para sumar 25%, -10 para restar) en track_log_work_hours.
-     d) Para cerrar formalmente la actividad, usa track_close_activity (invoca 'complete' en backend). Cierra la etapa final activa y marca status='Completed'.
-     e) Para cancelar una actividad en curso, usa track_cancel_activity (con motivo opcional). Cierra la etapa activa sin marcar la actividad como completada (status='Cancelled').
-     f) Para reabrir una actividad completada o cancelada, usa track_reopen_activity (reabre la última etapa cerrada y regresa a InProgress/Pending).
-     g) Para conocer la etapa activa en curso y su stageProgressId inmediato para registrar horas, usa track_get_current_process_stage.
-     h) En observaciones (track_add_observation), el tipo 'Progreso' fue retirado y reemplazado por 'Resolución' para resolver bloqueadores.
+     c) Para reportar avance de progreso %, envía 'progressDelta' (ej. +25 para sumar 25%, -10 para restar) en cada registro de tiempo por etapa con track_log_work_hours.
+     d) REPARTO OBLIGATORIO DEL 100% DE PROGRESO: Si el usuario pide "avanzar las etapas" o registrar los tiempos de una actividad, debes repartir el 100% de avance entre el total de etapas o tiempos que vayas a registrar (o las que el usuario pida registrar), para que la actividad avance progresivamente hasta el 100%. Con track_advance_process_stage puedes usar 'autoDistributeProgress: true' o 'completeOnFinish: true' para que el conector distribuya el progreso faltante automáticamente.
+     e) CONDICIÓN OBLIGATORIA PARA CERRAR ACTIVIDAD (REGLA ESTRICTA):
+        Para poder cerrar una actividad (track_close_activity), DEBES asegurarte de que su porcentaje de avance esté ya estrictamente al 100%. NO puedes cerrarla si antes no está al 100%. Si la actividad tiene menos del 100%, el conector bloqueará el cierre; debes registrar antes el tiempo por etapa con su 'progressDelta' necesario hasta completar el 100%.
+     f) Para cancelar una actividad en curso, usa track_cancel_activity (con motivo opcional). Cierra la etapa activa sin marcar la actividad como completada (status='Cancelled').
+     g) Para reabrir una actividad completada o cancelada, usa track_reopen_activity (reabre la última etapa cerrada y regresa a InProgress/Pending).
+     h) Para conocer la etapa activa en curso y su stageProgressId inmediato para registrar horas, usa track_get_current_process_stage.
+     i) En observaciones (track_add_observation), el tipo 'Progreso' fue retirado y reemplazado por 'Resolución' para resolver bloqueadores.
 
 6) REPORTES Y CAPACIDAD:
    - Para consultar el resumen diario real consolidado usa track_get_daily_report.
