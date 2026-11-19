@@ -91,7 +91,7 @@ const manifest = {
       title: "Activity Tracking API URL",
       description: "Base URL of the REST API.",
       required: false,
-      default: "http://10.200.1.13:5100",
+      default: "http://10.200.1.25:5100",
     },
     dry_run_mode: {
       type: "boolean",

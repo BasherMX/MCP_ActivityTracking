@@ -29,7 +29,7 @@ ENV NODE_ENV=production \
     PORT=3333 \
     HOST=:: \
     MCP_TRANSPORT=sse \
-    API_BASE_URL=http://10.200.1.13:5100 \
+    API_BASE_URL=http://10.200.1.25:5100 \
     DRY_RUN_MODE=true
 
 # Copiar manifiesto y dependencias de producción

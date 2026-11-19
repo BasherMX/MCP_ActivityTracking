@@ -1,6 +1,6 @@
 # Servidor MCP: Activity Tracking API (Node.js, TypeScript & Podman)
 
-Servidor oficial compatible con el **Model Context Protocol (MCP)** para integrar asistentes de inteligencia artificial en VS Code (GitHub Copilot) y Claude Desktop con el sistema institucional **Activity Tracking API** (`http://10.200.1.13:5100`).
+Servidor oficial compatible con el **Model Context Protocol (MCP)** para integrar asistentes de inteligencia artificial en VS Code (GitHub Copilot) y Claude Desktop con el sistema institucional **Activity Tracking API** (`http://10.200.1.25:5100`).
 
 Soporta despliegue **Centralizado en Contenedor Podman (Transporte HTTP/SSE Multi-Usuario)** y ejecución local por **Stdio**.
 
@@ -26,7 +26,7 @@ graph TD
     end
 
     subgraph "Red Institucional Backend"
-        API["Activity Tracking REST API<br/>http://10.200.1.13:5100"]
+        API["Activity Tracking REST API<br/>http://10.200.1.25:5100"]
         Dispatcher -->|JWT Token Per-User| API
     end
 ```
@@ -84,7 +84,7 @@ Respuesta esperada:
   "activeSessions": 0,
   "uptimeSeconds": 45,
   "dryRunMode": true,
-  "apiBaseUrl": "http://10.200.1.13:5100"
+  "apiBaseUrl": "http://10.200.1.25:5100"
 }
 ```
 

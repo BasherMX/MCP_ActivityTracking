@@ -8,19 +8,19 @@ Esta guía explica detalladamente cómo instalar y conectar el servidor MCP inst
 
 Claude Desktop soporta paquetes autocontenidos **MCPB (Model Context Protocol Bundle)**. Hemos generado los paquetes listos para instalar:
 
-* 📦 **[`activity-tracking.mcpb`](../activity-tracking.mcpb)** (Formato estándar oficial)
-* 📦 **[`activity-tracking.dxt`](../activity-tracking.dxt)** (Formato heredado DXT)
+- 📦 **[`activity-tracking.mcpb`](../activity-tracking.mcpb)** (Formato estándar oficial)
+- 📦 **[`activity-tracking.dxt`](../activity-tracking.dxt)** (Formato heredado DXT)
 
 ### Pasos para instalar:
 
 1. **Abre Claude Desktop**.
 2. Ve a **Settings** (Configuración) $\rightarrow$ pestaña **Extensions** (Extensiones).
-3. **Arrastra y suelta** el archivo [`activity-tracking.mcpb`](../activity-tracking.mcpb) directamente sobre la ventana de Claude Desktop (o en la zona donde indica *"Arrastra archivos .MCPB o .DXT aquí para instalar"*).
+3. **Arrastra y suelta** el archivo [`activity-tracking.mcpb`](../activity-tracking.mcpb) directamente sobre la ventana de Claude Desktop (o en la zona donde indica _"Arrastra archivos .MCPB o .DXT aquí para instalar"_).
 4. Claude Desktop mostrará un asistente para configurar tus credenciales:
-   * **Usuario Institucional:** Ingresa tu usuario (ej. `brayan.vazquez` o `adrian.garcia`).
-   * **Contraseña Institucional:** Ingresa tu contraseña de red (campo protegido/oculto).
-   * **URL API Activity Tracking:** Ya viene preconfigurado con `http://10.200.1.13:5100`.
-   * **Modo Dry-Run:** `false` (o `true` para simulación).
+   - **Usuario Institucional:** Ingresa tu usuario (ej. `brayan.vazquez` o `adrian.garcia`).
+   - **Contraseña Institucional:** Ingresa tu contraseña de red (campo protegido/oculto).
+   - **URL API Activity Tracking:** Ya viene preconfigurado con `http://10.200.1.25:5100`.
+   - **Modo Dry-Run:** `false` (o `true` para simulación).
 5. Haz clic en **Instalar / Guardar**. ¡Listo! Las 23 herramientas quedarán vinculadas de inmediato sin necesidad de editar archivos JSON a mano.
 
 ---
@@ -30,8 +30,9 @@ Claude Desktop soporta paquetes autocontenidos **MCPB (Model Context Protocol Bu
 Si prefieres conectar Claude Desktop al servidor institucional centralizado (`http://10.185.1.67:3333/sse`) a través de un puente de red:
 
 Edita tu archivo de configuración `claude_desktop_config.json`:
-* **Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
-* **macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
+
+- **Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
+- **macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
 
 ```json
 {
@@ -64,12 +65,9 @@ Para desarrolladores con el proyecto clonado en su disco local:
   "mcpServers": {
     "activity-tracking": {
       "command": "node",
-      "args": [
-        "D:\\TRABAJO\\MCP_ActivityTracking\\dist\\index.js",
-        "--stdio"
-      ],
+      "args": ["D:\\TRABAJO\\MCP_ActivityTracking\\dist\\index.js", "--stdio"],
       "env": {
-        "API_BASE_URL": "http://10.200.1.13:5100",
+        "API_BASE_URL": "http://10.200.1.25:5100",
         "AUTH_USERNAME": "tu.usuario",
         "AUTH_PASSWORD": "TuPasswordInstitucional",
         "DRY_RUN_MODE": "false"
@@ -86,11 +84,11 @@ Para desarrolladores con el proyecto clonado en su disco local:
 1. Al abrir o reiniciar Claude Desktop, observa el cuadro de entrada de mensajes.
 2. En la esquina inferior derecha verás el ícono de **herramientas / martillo** 🔨.
 3. Al hacer clic se mostrarán las **23 herramientas oficiales activas**:
-   * `track_get_my_activities`
-   * `track_create_activity`
-   * `track_update_activity`
-   * `track_close_activity`
-   * `track_get_sprint_work_items`
-   * `track_get_metrics_and_balance`
-   * `track_get_catalogs`
-   * `track_log_work_hours`, etc.
+   - `track_get_my_activities`
+   - `track_create_activity`
+   - `track_update_activity`
+   - `track_close_activity`
+   - `track_get_sprint_work_items`
+   - `track_get_metrics_and_balance`
+   - `track_get_catalogs`
+   - `track_log_work_hours`, etc.

@@ -79,6 +79,7 @@ Debe retornar un JSON con `"status": "ok"`.
 Claude Desktop permite instalar servidores MCP completos empaquetados en un único archivo autocontenido **MCPB (Model Context Protocol Bundle)** con tan solo arrastrar y soltar.
 
 ### Enlace de descarga oficial
+
 Descarga la última versión del paquete `.mcpb` desde GitHub Releases:
 👉 **[Descargar activity-tracking.mcpb](https://github.com/BasherMX/MCP_ActivityTracking/releases/download/mcpb-latest/activity-tracking.mcpb)**
 
@@ -93,7 +94,7 @@ Descarga la última versión del paquete `.mcpb` desde GitHub Releases:
 5. Se abrirá la ventana de configuración del paquete donde debes ingresar tus credenciales:
    - **Usuario Institucional:** Tu nombre de usuario de red (ej. `adrian.garcia` o `brayan.vazquez`).
    - **Contraseña Institucional:** Tu contraseña de red institucional.
-   - **URL API Activity Tracking:** Preconfigurada por defecto en `http://10.200.1.13:5100`.
+   - **URL API Activity Tracking:** Preconfigurada por defecto en `http://10.200.1.25:5100`.
    - **Modo Dry-Run:** `false` (o `true` si prefieres pruebas de simulación sin inserción en base de datos).
 6. Haz clic en **Instalar / Guardar**.
 
@@ -105,7 +106,7 @@ Descarga la última versión del paquete `.mcpb` desde GitHub Releases:
 
 Una vez conectado tanto en VS Code como en Claude Desktop, puedes interactuar en lenguaje natural:
 
-- *"¿Qué tareas y actividades tengo asignadas actualmente?"* $\rightarrow$ Invoca `track_get_my_activities`.
-- *"Consulta el estado de los work items del Sprint 1176."* $\rightarrow$ Invoca `track_get_sprint_work_items`.
-- *"¿Cuántas horas llevo reportadas esta semana y cuál es mi balance?"* $\rightarrow$ Invoca `track_get_metrics_and_balance`.
-- *"Registra 3 horas trabajadas hoy en la revisión técnica de Comunidad Informática."* $\rightarrow$ Invoca `track_create_activity`.
+- _"¿Qué tareas y actividades tengo asignadas actualmente?"_ $\rightarrow$ Invoca `track_get_my_activities`.
+- _"Consulta el estado de los work items del Sprint 1176."_ $\rightarrow$ Invoca `track_get_sprint_work_items`.
+- _"¿Cuántas horas llevo reportadas esta semana y cuál es mi balance?"_ $\rightarrow$ Invoca `track_get_metrics_and_balance`.
+- _"Registra 3 horas trabajadas hoy en la revisión técnica de Comunidad Informática."_ $\rightarrow$ Invoca `track_create_activity`.
